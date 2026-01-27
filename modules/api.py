@@ -38,11 +38,11 @@ class Captura:
 @strawberry.type
 class Query:
     @strawberry.field
-    def get_captura(self, filters: Optional[List[FilterInput]] = None) -> List[Captura]:
-        # 1. Base SELECT and FROM (No Group By yet!)
-        sql_base = """
+    def get_captura(self, grain: str = "month", filters: Optional[List[FilterInput]] = None) -> List[Captura]:
+        # O SQL usa o parâmetro 'grain' diretamente no date_trunc
+        sql_base = f"""
         SELECT
-            date_trunc('month', process_created_at)::text as mes,
+            date_trunc('{grain}', process_created_at)::text as {grain},
             count(*) as total,
             sum(case when captura_status in ('Email', 'Automático') then 1 else 0 end) as total_automatico,
             document_type
@@ -68,7 +68,7 @@ class Query:
                 params[param_name] = f.value
 
         # 3. Add GROUP BY and ORDER BY at the very end
-        full_query = sql_base + filter_sql + " GROUP BY mes, document_type ORDER BY mes"
+        full_query = sql_base + filter_sql + " GROUP BY 1, document_type ORDER BY 1"
         
         print(full_query)
         print(params)

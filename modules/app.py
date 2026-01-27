@@ -77,6 +77,19 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                     className="dark-dropdown"
                 ),
                 
+                html.P("Granularidade", className="mt-4 mb-1"),
+                dcc.Dropdown(
+                    id='filter-grain',
+                    options=[
+                        {'label': 'Diário', 'value': 'day'},
+                        {'label': 'Semanal', 'value': 'week'},
+                        {'label': 'Mensal', 'value': 'month'}
+                    ],
+                    value='month', # Padrão
+                    clearable=False,
+                    className="dark-dropdown"
+                ),
+                
                 dbc.Button(
                     "Aplicar Filtros", 
                     id="btn-apply", 
@@ -115,9 +128,14 @@ def toggle_offcanvas(n1, is_open):
     State('filter-date', 'start_date'),
     State('filter-date', 'end_date'),
     State('filter-doc', 'value'),
-    State('filter-status', 'value')
+    State('filter-status', 'value'),
+    State('filter-grain', 'value')
 )
-def render_content(tab, n_clicks, start, end, doc_types, status):
+def render_content(tab, n_clicks, start, end, doc_types, status, grain):
+    
+    grain_map = {'day': 'D', 'week': 'W', 'month': 'ME'}
+    pd_grain = grain_map.get(grain, 'ME')
+    
     api_filters = []
     if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
     if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
@@ -127,7 +145,7 @@ def render_content(tab, n_clicks, start, end, doc_types, status):
     if tab == 'tab-resumo':
         return layouts.get_resumo_iframe(HTML_HOMEPAGE_CONTENT)
     elif tab == 'tab-captura':
-        return layouts.get_captura_layout(filters=api_filters)
+        return layouts.get_captura_layout(selected_grain=pd_grain, filters=api_filters, api_grain=grain)
     return html.Div("Conteúdo em desenvolvimento", style={'color': 'white'})
 
 if __name__ == '__main__':

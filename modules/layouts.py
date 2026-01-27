@@ -25,11 +25,11 @@ def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
         
     return resampled.to_dict('records')
 
-# Updated to accept filters argument
-def get_captura_layout(selected_grain='ME', filters=None):
+
+def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
     # 1. Fetch filtered data from API
     # We pass the filters list received from the app.py callback
-    raw_data = api_client.get_captura(filters=filters) 
+    raw_data = api_client.get_captura(filters=filters, grain=api_grain) 
     
     if not raw_data:
         return html.Div("Sem dados para os filtros selecionados", 

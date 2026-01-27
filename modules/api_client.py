@@ -14,20 +14,22 @@ def fetch_graphql_data(payload): # Rename argument for clarity
         print(f"API Connection Error: {e}")
         return None
 
-def get_captura(filters=None):
+def get_captura(grain="month", filters=None):
     query = """
-    query GetCaptura($filters: [FilterInput!]) {
-        getCaptura(filters: $filters) {
+    query GetCaptura($filters: [FilterInput!], $grain: String!) {
+        getCaptura(filters: $filters, grain: $grain) {
             date
             totalCount
             totalAuto
         }
     }
     """
-    # Ensure filters is an empty list if None, to satisfy [FilterInput!]
     payload = {
         'query': query, 
-        'variables': {'filters': filters if filters is not None else []}
+        'variables': {
+            'filters': filters if filters is not None else [],
+            'grain': grain
+        }
     }
     res = fetch_graphql_data(payload)
     if res and 'data' in res:
