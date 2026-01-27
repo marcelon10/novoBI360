@@ -8,42 +8,38 @@ def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
     if not data:
         return []
     
-    # Default to empty list if no columns provided
     sum_cols = sum_cols or []
-    
     df = pd.DataFrame(data)
     df[date_col] = pd.to_datetime(df[date_col]) 
     
-    # Dynamically build the aggregation dictionary
     agg_map = {col: 'sum' for col in sum_cols}
-    
     resampled = df.set_index(date_col).resample(grain).agg(agg_map).reset_index()
     
-    # Logic to handle date formatting based on grain
     date_formats = {
-        'ME': '%b %Y',    # Monthly
-        'W': 'W%U %Y',    # Weekly
-        'D': '%d/%m/%y'   # Daily
+        'ME': '%b %Y',
+        'W': 'W%U %Y',
+        'D': '%d/%m/%y'
     }
     fmt = date_formats.get(grain, '%d/%m/%y')
     resampled['display_date'] = resampled[date_col].dt.strftime(fmt)
         
     return resampled.to_dict('records')
 
-def get_captura_layout(selected_grain='ME'):
-    # 1. Fetch raw data from API
-    raw_data = api_client.get_captura() 
+# Updated to accept filters argument
+def get_captura_layout(selected_grain='ME', filters=None):
+    # 1. Fetch filtered data from API
+    # We pass the filters list received from the app.py callback
+    raw_data = api_client.get_captura(filters=filters) 
     
     if not raw_data:
-        return html.Div("Sem dados", style={'color': 'white'})
+        return html.Div("Sem dados para os filtros selecionados", 
+                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
 
-    # 2. Big Numbers (KPIs) - Total of the entire dataset
-    # We sum the raw data directly for the cards
+    # 2. Big Numbers (KPIs) 
     total_val = sum(d.get('totalCount', 0) for d in raw_data)
     auto_val = sum(d.get('totalAuto', 0) for d in raw_data)
     
     # 3. Flexible Aggregation for the Chart
-    # We tell the function exactly which columns to sum
     chart_data = aggregate_by_grain(
         data=raw_data, 
         sum_cols=['totalCount', 'totalAuto'], 
@@ -51,12 +47,8 @@ def get_captura_layout(selected_grain='ME'):
     )
     
     # 4. Business Logic (Dash-side math)
-    # Now we loop through the aggregated periods to create the stack and line data
     for row in chart_data:
-        # Create the 'Manual' stack: Total - Auto
         row['manualCount'] = row.get('totalCount', 0) - row.get('totalAuto', 0)
-        
-        # Create the Line data: (Auto / Total) * 100
         if row.get('totalCount', 0) > 0:
             row['autoPct'] = (row.get('totalAuto', 0) / row.get('totalCount', 0)) * 100
         else:
@@ -65,10 +57,8 @@ def get_captura_layout(selected_grain='ME'):
     # 5. Return the Layout
     return html.Div([
         html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2fr', 'gap': '20px'}, children=[
-            # KPI Card component using the full totals
             components.create_captura_kpi_layout({'totalCount': total_val, 'autoCount': auto_val}),
             
-            # Combined Chart using the aggregated/processed chart_data
             dcc.Graph(figure=charting.create_combined_chart(
                 data=chart_data,
                 bar_keys=['totalAuto', 'manualCount'], 

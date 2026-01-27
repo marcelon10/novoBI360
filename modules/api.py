@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 from sqlalchemy import create_engine, text
 import urllib.parse
+from typing import Optional, List
 
 # 1. Your raw credentials
 user = "analytics"
@@ -21,6 +22,12 @@ DATABASE_URL = f"postgresql://{safe_user}:{safe_password}@{host}:{port}/{db_name
 # 1. Database Connection
 engine = create_engine(DATABASE_URL) # Replace with your Postgres/SQL string
         
+@strawberry.input
+class FilterInput:
+    field: str
+    value: str
+    operator: str = "eq" # eq, gte, lte, in        
+        
 @strawberry.type
 class Captura:
     date: str
@@ -31,26 +38,45 @@ class Captura:
 @strawberry.type
 class Query:
     @strawberry.field
-    def get_captura(self) -> list[Captura]:
-        query = text("""
-        select
-        	date_trunc('month', process_created_at) as mes,
+    def get_captura(self, filters: Optional[List[FilterInput]] = None) -> List[Captura]:
+        # 1. Base SELECT and FROM (No Group By yet!)
+        sql_base = """
+        SELECT
+            date_trunc('month', process_created_at)::text as mes,
             count(*) as total,
-            sum(case 
-                when captura_status in ('Email', 'Automático') then 1 else 0 
-            end) as total_automatico,
-        	document_type
-        from
-        	mview_process_fact mpf
-        group by
-        	mes,
-        	document_type
-        order by
-        	mes
-        """)
+            sum(case when captura_status in ('Email', 'Automático') then 1 else 0 end) as total_automatico,
+            document_type
+        FROM mview_process_fact mpf
+        WHERE 1=1
+        """
+        
+        params = {}
+        filter_sql = ""
+
+        # 2. Build the WHERE clause
+        if filters:
+            for i, f in enumerate(filters):
+                param_name = f"val_{i}"
+                if f.operator == "gte":
+                    filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte":
+                    filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in":
+                    filter_sql += f" AND {f.field} IN ({f.value})"
+                else:
+                    filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+
+        # 3. Add GROUP BY and ORDER BY at the very end
+        full_query = sql_base + filter_sql + " GROUP BY mes, document_type ORDER BY mes"
+        
+        print(full_query)
+        print(params)
+        
         with engine.connect() as conn:
-            rows = conn.execute(query).fetchall()
-            return [Captura(date=r[0], totalCount=r[1], totalAuto=r[2], documentType=r[3]) for r in rows]
+            rows = conn.execute(text(full_query), params).fetchall()
+            # Note: Added documentType to the constructor to match your Captura class
+            return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)
