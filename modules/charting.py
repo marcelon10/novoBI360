@@ -48,3 +48,60 @@ def create_combined_chart(data, bar_keys, line_key=None, bar_colors=None, bar_na
         fig.update_yaxes(showgrid=False, secondary_y=True, range=[0, 105])
         
     return fig
+
+def create_pie_chart(labels, values, colors, title, hole=0.3):
+
+    fig = go.Figure(
+        data=[go.Pie(labels=labels, values=values, hole=hole, marker_colors=colors)]
+    )
+
+    fig.update_traces(textinfo="percent+label", pull=[0.05] * len(labels))
+
+    fig.update_layout(
+        title_text=title,
+        title_x=0.5,
+        showlegend=False,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=20, r=20, t=40, b=20),
+        font=dict(family="Inter, sans-serif", size=12, color="#d1d5db"),
+    )
+
+    return fig
+
+def create_table_chart(data, col_name, title=""):
+    if not data:
+        return go.Figure()
+
+    # Extraindo colunas
+    labels = [d['label'] for d in data[:10]]
+    totals = [f"{d['total']:,}".replace(",", ".") for d in data[:10]]
+    pcts = [f"{d['pct']:.1f}%" for d in data[:10]]
+
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=[f'<b>{col_name}</b>', '<b>Total</b>', '<b>% Auto</b>'],
+            fill_color='#1f2937',
+            align='left',
+            font=dict(color='white', size=13),
+            height=35
+        ),
+        cells=dict(
+            values=[labels, totals, pcts],
+            fill_color='rgba(0,0,0,0)', # Fundo transparente para casar com o story
+            align='left',
+            font=dict(color='#d1d5db', size=12),
+            height=30
+        ))
+    ])
+
+    fig.update_layout(
+        title_text=title,
+        title_x=0.5,
+        margin=dict(l=10, r=10, t=50, b=10),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family="Inter, sans-serif", color="#d1d5db"),
+        height=350 # Altura fixa para alinhar com os outros gráficos
+    )
+    return fig

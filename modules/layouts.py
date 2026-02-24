@@ -25,52 +25,144 @@ def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
         
     return resampled.to_dict('records')
 
-
 def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
-    # 1. Fetch filtered data from API
-    # We pass the filters list received from the app.py callback
-    raw_data = api_client.get_captura(filters=filters, grain=api_grain) 
+    # 1. Busca os dados na API
+    raw_data = api_client.get_captura(filters=filters, grain=api_grain)
     
     if not raw_data:
         return html.Div("Sem dados para os filtros selecionados", 
                         style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
 
-    # 2. Big Numbers (KPIs) 
+    # 2. KPIs e Processamento
     total_val = sum(d.get('totalCount', 0) for d in raw_data)
     auto_val = sum(d.get('totalAuto', 0) for d in raw_data)
     
-    # 3. Flexible Aggregation for the Chart
-    chart_data = aggregate_by_grain(
-        data=raw_data, 
-        sum_cols=['totalCount', 'totalAuto'], 
-        grain=selected_grain
+    chart_data_geral = aggregate_by_grain(raw_data, sum_cols=['totalCount', 'totalAuto'], grain=selected_grain)
+    for row in chart_data_geral:
+        row['manualCount'] = row['totalCount'] - row['totalAuto']
+        row['autoPct'] = (row['totalAuto'] / row['totalCount'] * 100) if row['totalCount'] > 0 else 0
+
+    # 3. Processamento Story 2
+    type_totals = {}
+    time_type_map = {}
+    for d in raw_data:
+        dt = d['date']; t = d.get('documentType', 'N/A'); count = d.get('totalCount', 0)
+        type_totals[t] = type_totals.get(t, 0) + count
+        if dt not in time_type_map: time_type_map[dt] = {'date': dt}
+        time_type_map[dt][t] = time_type_map[dt].get(t, 0) + count
+
+    pie_labels = list(type_totals.keys()); pie_values = list(type_totals.values())
+    stacked_data = aggregate_by_grain(list(time_type_map.values()), sum_cols=pie_labels, grain=selected_grain)
+    
+    # --- PROCESSAMENTO STORY 3 (RANKINGS) ---
+    def get_ranking(key_field):
+        agg = {}
+        for d in raw_data:
+            val = d.get(key_field, 'N/A')
+            if val not in agg:
+                agg[val] = {'total': 0, 'auto': 0}
+            agg[val]['total'] += d.get('totalCount', 0)
+            agg[val]['auto'] += d.get('totalAuto', 0)
+        
+        ranking = []
+        for label, counts in agg.items():
+            pct = (counts['auto'] / counts['total'] * 100) if counts['total'] > 0 else 0
+            ranking.append({'label': label, 'total': counts['total'], 'pct': pct})
+        
+        # Ordena pelo maior volume total
+        return sorted(ranking, key=lambda x: x['total'], reverse=True)
+
+    # Usando documentType como placeholder conforme solicitado
+    fornecedores_ranking = get_ranking('supplierName') 
+    cidades_ranking = get_ranking('invoiceCityName')
+
+    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
+    GRAPH_HEIGHT = "400px"
+
+    # --- AJUSTE STORY 1 ---
+    fig_geral = charting.create_combined_chart(
+        chart_data_geral, 
+        bar_keys=['totalAuto', 'manualCount'], 
+        line_key='autoPct',
+        bar_colors=['#8B5CF6', '#374151'], 
+        bar_names=['Automático', 'Manual'],
+        title=f'Volume Total vs % Automação ({selected_grain})'
+    ).update_layout(
+        legend=dict(
+            orientation="h", 
+            yanchor="top",
+            y=-0.15,      # Puxado para cima para acompanhar a altura menor
+            xanchor="center", 
+            x=0.5
+        ),
+        margin=dict(t=60, b=80, l=40, r=40), 
+        title=dict(y=0.98, x=0.5, xanchor='center')
     )
-    
-    # 4. Business Logic (Dash-side math)
-    for row in chart_data:
-        row['manualCount'] = row.get('totalCount', 0) - row.get('totalAuto', 0)
-        if row.get('totalCount', 0) > 0:
-            row['autoPct'] = (row.get('totalAuto', 0) / row.get('totalCount', 0)) * 100
-        else:
-            row['autoPct'] = 0
-    
-    # 5. Return the Layout
-    return html.Div([
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2fr', 'gap': '20px'}, children=[
+
+    # --- AJUSTE STORY 2 ---
+    fig_stacked = charting.create_combined_chart(
+        stacked_data, 
+        bar_keys=pie_labels, 
+        bar_names=pie_labels,
+        title='Composição por Tipo de Documento (Temporal)'
+    ).update_layout(
+        barmode='stack',
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+        margin=dict(t=60, b=80, l=40, r=40),
+        title=dict(y=0.98, x=0.5, xanchor='center')
+    )
+
+    # --- MONTAGEM DO LAYOUT ---
+    story1 = html.Div(style={'marginBottom': '20px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
             components.create_captura_kpi_layout({'totalCount': total_val, 'autoCount': auto_val}),
-            
-            dcc.Graph(figure=charting.create_combined_chart(
-                data=chart_data,
-                bar_keys=['totalAuto', 'manualCount'], 
-                line_key='autoPct',                     
-                bar_colors=['#8B5CF6', '#374151'],      
-                bar_names=['Automático', 'Manual'],
-                line_name='% Automatismo',
-                line_color='#10B981',
-                title=f'Ingresso de Notas: Automático vs Manual ({selected_grain})'
-            ))
+            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
         ])
     ])
 
+    story2 = html.Div(style={'backgroundColor': '#1f2937', 'padding': '20px', 'borderRadius': '8px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
+            dcc.Graph(figure=fig_stacked, style={"height": GRAPH_HEIGHT}), 
+            dcc.Graph(figure={
+                'data': [{'labels': pie_labels, 'values': pie_values, 'type': 'pie', 'hole': .4}],
+                'layout': {
+                    'template': 'plotly_dark', 
+                    'title': 'Composição (Percentual)',
+                    'paper_bgcolor': 'rgba(0,0,0,0)',
+                    'showlegend': False,
+                    'legend': {'orientation': 'h', 'y': -0.15, 'x': 0.5, 'xanchor': 'center'},
+                    'margin': {'t': 60, 'b': 80, 'l': 20, 'r': 20}
+                }
+            }, style={"height": GRAPH_HEIGHT})
+        ])
+    ])
+    
+    # --- STORY 3 ---
+    story3 = html.Div(style={'marginBottom': '20px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
+            dcc.Graph(
+                figure=charting.create_table_chart(
+                    fornecedores_ranking, 
+                    "Fornecedor", 
+                    "Top 10 Fornecedores por Volume"
+                ),
+                style={'height': '400px'}
+            ),
+            dcc.Graph(
+                figure=charting.create_table_chart(
+                    cidades_ranking, 
+                    "Cidade", 
+                    "Top 10 Cidades por Volume"
+                ),
+                style={'height': '400px'}
+            )
+        ])
+    ])
+
+    return html.Div(
+        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
+        children=[story1, story2, story3] # Adicionado story3 aqui
+    )
+    
 def get_resumo_iframe(content):
     return html.Iframe(srcDoc=content, style={'width': '100%', 'height': '2000px', 'border': 'none'})

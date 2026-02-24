@@ -34,6 +34,8 @@ class Captura:
     totalCount: int
     totalAuto: int
     documentType: str
+    supplierName: str
+    invoiceCityName: str
     
 @strawberry.type
 class Query:
@@ -45,7 +47,9 @@ class Query:
             date_trunc('{grain}', process_created_at)::text as {grain},
             count(*) as total,
             sum(case when captura_status in ('Email', 'Automático') then 1 else 0 end) as total_automatico,
-            document_type
+            document_type,
+            coalesce(supplier_name, 'Sem Fornecedor') as supplier_name,
+            coalesce(invoice_city_name, 'Sem Cidade') as invoice_city_name
         FROM mview_process_fact mpf
         WHERE 1=1
         """
@@ -68,7 +72,7 @@ class Query:
                 params[param_name] = f.value
 
         # 3. Add GROUP BY and ORDER BY at the very end
-        full_query = sql_base + filter_sql + " GROUP BY 1, document_type ORDER BY 1"
+        full_query = sql_base + filter_sql + " GROUP BY 1, document_type, supplier_name, invoice_city_name ORDER BY 1"
         
         print(full_query)
         print(params)
@@ -76,7 +80,7 @@ class Query:
         with engine.connect() as conn:
             rows = conn.execute(text(full_query), params).fetchall()
             # Note: Added documentType to the constructor to match your Captura class
-            return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
+            return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3], supplierName=r[4], invoiceCityName=r[5]) for r in rows]
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)

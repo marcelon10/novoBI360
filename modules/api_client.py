@@ -21,6 +21,9 @@ def get_captura(grain="month", filters=None):
             date
             totalCount
             totalAuto
+            documentType
+            supplierName
+            invoiceCityName
         }
     }
     """
