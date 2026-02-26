@@ -27,7 +27,7 @@ def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
 
 def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
     # 1. Busca os dados na API
-    raw_data = api_client.get_captura(filters=filters, grain=api_grain)
+    raw_data = api_client.get_captura(filters=filters, customer='aegea_prod', grain=api_grain)
     
     if not raw_data:
         return html.Div("Sem dados para os filtros selecionados", 
@@ -54,27 +54,27 @@ def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
     pie_labels = list(type_totals.keys()); pie_values = list(type_totals.values())
     stacked_data = aggregate_by_grain(list(time_type_map.values()), sum_cols=pie_labels, grain=selected_grain)
     
-    # --- PROCESSAMENTO STORY 3 (RANKINGS) ---
-    def get_ranking(key_field):
-        agg = {}
-        for d in raw_data:
-            val = d.get(key_field, 'N/A')
-            if val not in agg:
-                agg[val] = {'total': 0, 'auto': 0}
-            agg[val]['total'] += d.get('totalCount', 0)
-            agg[val]['auto'] += d.get('totalAuto', 0)
+    # # --- PROCESSAMENTO STORY 3 (RANKINGS) ---
+    # def get_ranking(key_field):
+    #     agg = {}
+    #     for d in raw_data:
+    #         val = d.get(key_field, 'N/A')
+    #         if val not in agg:
+    #             agg[val] = {'total': 0, 'auto': 0}
+    #         agg[val]['total'] += d.get('totalCount', 0)
+    #         agg[val]['auto'] += d.get('totalAuto', 0)
         
-        ranking = []
-        for label, counts in agg.items():
-            pct = (counts['auto'] / counts['total'] * 100) if counts['total'] > 0 else 0
-            ranking.append({'label': label, 'total': counts['total'], 'pct': pct})
+    #     ranking = []
+    #     for label, counts in agg.items():
+    #         pct = (counts['auto'] / counts['total'] * 100) if counts['total'] > 0 else 0
+    #         ranking.append({'label': label, 'total': counts['total'], 'pct': pct})
         
-        # Ordena pelo maior volume total
-        return sorted(ranking, key=lambda x: x['total'], reverse=True)
+    #     # Ordena pelo maior volume total
+    #     return sorted(ranking, key=lambda x: x['total'], reverse=True)
 
-    # Usando documentType como placeholder conforme solicitado
-    fornecedores_ranking = get_ranking('supplierName') 
-    cidades_ranking = get_ranking('invoiceCityName')
+    # # Usando documentType como placeholder conforme solicitado
+    # fornecedores_ranking = get_ranking('supplierName') 
+    # cidades_ranking = get_ranking('invoiceCityName')
 
     # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
     GRAPH_HEIGHT = "400px"
@@ -137,31 +137,31 @@ def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
         ])
     ])
     
-    # --- STORY 3 ---
-    story3 = html.Div(style={'marginBottom': '20px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
-            dcc.Graph(
-                figure=charting.create_table_chart(
-                    fornecedores_ranking, 
-                    "Fornecedor", 
-                    "Top 10 Fornecedores por Volume"
-                ),
-                style={'height': '400px'}
-            ),
-            dcc.Graph(
-                figure=charting.create_table_chart(
-                    cidades_ranking, 
-                    "Cidade", 
-                    "Top 10 Cidades por Volume"
-                ),
-                style={'height': '400px'}
-            )
-        ])
-    ])
+    # # --- STORY 3 ---
+    # story3 = html.Div(style={'marginBottom': '20px'}, children=[
+    #     html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
+    #         dcc.Graph(
+    #             figure=charting.create_table_chart(
+    #                 fornecedores_ranking, 
+    #                 "Fornecedor", 
+    #                 "Top 10 Fornecedores por Volume"
+    #             ),
+    #             style={'height': '400px'}
+    #         ),
+    #         dcc.Graph(
+    #             figure=charting.create_table_chart(
+    #                 cidades_ranking, 
+    #                 "Cidade", 
+    #                 "Top 10 Cidades por Volume"
+    #             ),
+    #             style={'height': '400px'}
+    #         )
+    #     ])
+    # ])
 
     return html.Div(
         style={"display": "flex", "flexDirection": "column", "gap": "20px"},
-        children=[story1, story2, story3] # Adicionado story3 aqui
+        children=[story1, story2]#, story3] # Adicionado story3 aqui
     )
     
 def get_resumo_iframe(content):

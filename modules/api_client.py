@@ -14,16 +14,14 @@ def fetch_graphql_data(payload): # Rename argument for clarity
         print(f"API Connection Error: {e}")
         return None
 
-def get_captura(grain="month", filters=None):
+def get_captura(grain="month", customer=None, filters=None):
     query = """
-    query GetCaptura($filters: [FilterInput!], $grain: String!) {
-        getCaptura(filters: $filters, grain: $grain) {
+    query GetCaptura($filters: [FilterInput!], $customer: String!, $grain: String!) {
+        getCaptura(filters: $filters, customer: $customer, grain: $grain) {
             date
             totalCount
             totalAuto
             documentType
-            supplierName
-            invoiceCityName
         }
     }
     """
@@ -31,6 +29,7 @@ def get_captura(grain="month", filters=None):
         'query': query, 
         'variables': {
             'filters': filters if filters is not None else [],
+            'customer': customer,
             'grain': grain
         }
     }

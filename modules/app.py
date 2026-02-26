@@ -63,7 +63,7 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                 html.P("Tipo de Documento", className="mt-4 mb-1"),
                 dcc.Dropdown(
                     id='filter-doc',
-                    options=['MaterialInvoice'],
+                    options=['Vinvoice::MaterialInvoice'],
                     multi=True,
                     placeholder="Selecione...",
                     className="dark-dropdown"
@@ -72,7 +72,7 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                 html.P("Status", className="mt-4 mb-1"),
                 dcc.Dropdown(
                     id='filter-status',
-                    options=['Automático', 'Manual', 'Email'],
+                    options=['CAPTURE', 'MAILBOX_CAPTURE', 'INTERNAL_USER', 'EXTERNAL_USER'],
                     placeholder="Selecione...",
                     className="dark-dropdown"
                 ),

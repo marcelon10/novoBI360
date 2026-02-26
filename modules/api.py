@@ -10,7 +10,7 @@ user = "analytics"
 password = os.getenv('PWD_INTERNAL')
 host = "localhost"
 port = "15432"
-db_name = "dw_aegea"
+db_name = "analytics"
 
 # 2. URL-encode the password (and the user, just in case)
 safe_user = urllib.parse.quote_plus(user)
@@ -34,24 +34,20 @@ class Captura:
     totalCount: int
     totalAuto: int
     documentType: str
-    supplierName: str
-    invoiceCityName: str
     
 @strawberry.type
 class Query:
     @strawberry.field
-    def get_captura(self, grain: str = "month", filters: Optional[List[FilterInput]] = None) -> List[Captura]:
+    def get_captura(self, grain: str = "month", customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[Captura]:
         # O SQL usa o parâmetro 'grain' diretamente no date_trunc
         sql_base = f"""
         SELECT
             date_trunc('{grain}', process_created_at)::text as {grain},
-            count(*) as total,
-            sum(case when captura_status in ('Email', 'Automático') then 1 else 0 end) as total_automatico,
-            document_type,
-            coalesce(supplier_name, 'Sem Fornecedor') as supplier_name,
-            coalesce(invoice_city_name, 'Sem Cidade') as invoice_city_name
-        FROM mview_process_fact mpf
-        WHERE 1=1
+            sum(total_notas) as total_count,
+            sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
+            document_type
+        FROM mview_teste_bi_captura
+        WHERE c_id = '{customer}'
         """
         
         params = {}
@@ -72,7 +68,7 @@ class Query:
                 params[param_name] = f.value
 
         # 3. Add GROUP BY and ORDER BY at the very end
-        full_query = sql_base + filter_sql + " GROUP BY 1, document_type, supplier_name, invoice_city_name ORDER BY 1"
+        full_query = sql_base + filter_sql + " GROUP BY 1, document_type ORDER BY 1"
         
         print(full_query)
         print(params)
@@ -80,7 +76,7 @@ class Query:
         with engine.connect() as conn:
             rows = conn.execute(text(full_query), params).fetchall()
             # Note: Added documentType to the constructor to match your Captura class
-            return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3], supplierName=r[4], invoiceCityName=r[5]) for r in rows]
+            return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)
