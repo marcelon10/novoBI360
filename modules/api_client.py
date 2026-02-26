@@ -37,3 +37,79 @@ def get_captura(grain="month", customer=None, filters=None):
     if res and 'data' in res:
         return res['data'].get('getCaptura', [])
     return []
+
+def get_captura_fornecedores(customer=None, filters=None):
+    query = """
+    query GetCapturaFornecedores($filters: [FilterInput!], $customer: String!) {
+        getCapturaFornecedores(filters: $filters, customer: $customer) {
+            supplierCnpj
+            totalCount
+            totalAuto
+            documentType
+        }
+    }
+    """
+    payload = {
+        'query': query, 
+        'variables': {
+            'filters': filters if filters is not None else [],
+            'customer': customer
+        }
+    }
+    res = fetch_graphql_data(payload)
+    if res and 'data' in res:
+        return res['data'].get('getCapturaFornecedores', [])
+    return []
+
+def get_captura_cidades(customer=None, filters=None):
+    query = """
+    query GetCapturaCidades($filters: [FilterInput!], $customer: String!) {
+        getCapturaCidades(filters: $filters, customer: $customer) {
+            currency
+            totalCount
+            totalAuto
+            documentType
+        }
+    }
+    """
+    payload = {
+        'query': query, 
+        'variables': {
+            'filters': filters if filters is not None else [],
+            'customer': customer
+        }
+    }
+    res = fetch_graphql_data(payload)
+    if res and 'data' in res:
+        return res['data'].get('getCapturaCidades', [])
+    return []
+
+def get_analitico(limit=10, offset=0, customer=None, filters=None):
+    # A query agora pede limit e offset para o servidor
+    query = """
+    query GetCapturaAnalitico($limit: Int!, $offset: Int!, $customer: String!, $filters: [FilterInput!]) {
+        getCapturaAnalitico(limit: $limit, offset: $offset, customer: $customer, filters: $filters) {
+            id
+            supplierCnpj
+            issueDate
+            provider
+            totalValue
+            documentType
+        }
+    }
+    """
+    payload = {
+        'query': query,
+        'variables': {
+            'limit': limit,
+            'offset': offset,
+            'customer': customer,
+            'filters': filters or []
+        }
+    }
+    
+    res = fetch_graphql_data(payload)
+    
+    if res and 'data' in res:
+        return res['data'].get('getCapturaAnalitico', [])
+    return []

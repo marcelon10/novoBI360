@@ -36,6 +36,29 @@ class Captura:
     documentType: str
     
 @strawberry.type
+class CapturaFornecedores:
+    supplierCnpj: str
+    totalCount: int
+    totalAuto: int
+    documentType: str
+
+@strawberry.type
+class CapturaCidades:
+    currency: str
+    totalCount: int
+    totalAuto: int
+    documentType: str
+    
+@strawberry.type
+class CapturaAnalitica:
+    id: int
+    supplierCnpj: str
+    issueDate: str
+    provider: str
+    totalValue: float 
+    documentType: str 
+
+@strawberry.type
 class Query:
     @strawberry.field
     def get_captura(self, grain: str = "month", customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[Captura]:
@@ -77,6 +100,126 @@ class Query:
             rows = conn.execute(text(full_query), params).fetchall()
             # Note: Added documentType to the constructor to match your Captura class
             return [Captura(date=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
+
+    @strawberry.field
+    def get_captura_fornecedores(self, customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[CapturaFornecedores]:
+        sql_base = f"""
+        SELECT
+            supplier_cnpj,
+            sum(total_notas) as total_count,
+            sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
+            document_type
+        FROM mview_bi_captura_fornecedores
+        WHERE c_id = '{customer}'
+        """
+        
+        params = {}
+        filter_sql = ""
+
+        # 2. Build the WHERE clause
+        if filters:
+            for i, f in enumerate(filters):
+                param_name = f"val_{i}"
+                if f.operator == "gte":
+                    filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte":
+                    filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in":
+                    filter_sql += f" AND {f.field} IN ({f.value})"
+                else:
+                    filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+
+        # 3. Add GROUP BY and ORDER BY at the very end
+        full_query = sql_base + filter_sql + " GROUP BY supplier_cnpj, document_type ORDER BY total_count DESC LIMIT 10"
+        
+        print(full_query)
+        print(params)
+        
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [CapturaFornecedores(supplierCnpj=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
+        
+    
+    @strawberry.field
+    def get_captura_cidades(self, customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[CapturaCidades]:
+        sql_base = f"""
+        SELECT
+            coalesce(currency, 'Sem Cidade') as currency,
+            sum(total_notas) as total_count,
+            sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
+            document_type
+        FROM mview_bi_captura_cidades
+        WHERE c_id = '{customer}'
+        """
+        
+        params = {}
+        filter_sql = ""
+
+        # 2. Build the WHERE clause
+        if filters:
+            for i, f in enumerate(filters):
+                param_name = f"val_{i}"
+                if f.operator == "gte":
+                    filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte":
+                    filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in":
+                    filter_sql += f" AND {f.field} IN ({f.value})"
+                else:
+                    filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+
+        # 3. Add GROUP BY and ORDER BY at the very end
+        full_query = sql_base + filter_sql + " GROUP BY currency, document_type ORDER BY total_count DESC LIMIT 10"
+        
+        print(full_query)
+        print(params)
+        
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [CapturaCidades(currency=r[0], totalCount=r[1], totalAuto=int(r[2]), documentType=r[3]) for r in rows]
+
+    @strawberry.field
+    def get_captura_analitico(self, customer: str = None, limit: int = 50, offset: int = 0, filters: Optional[List[FilterInput]] = None) -> List[CapturaAnalitica]:
+        
+        sql_base = f"""
+            SELECT id, supplier_cnpj, issue_date, provider, total_value, type as document_type
+            FROM tax_documents
+            WHERE c_id = '{customer}'
+        """
+        
+        params = {}
+        filter_sql = ""
+
+        # 2. Build the WHERE clause
+        if filters:
+            for i, f in enumerate(filters):
+                
+                if f.field == 'process_created_at':
+                    f.field = 'created_at'
+                    
+                param_name = f"val_{i}"
+                if f.operator == "gte":
+                    filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte":
+                    filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in":
+                    filter_sql += f" AND {f.field} IN ({f.value})"
+                else:
+                    filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+
+        # 3. Add GROUP BY and ORDER BY at the very end
+        full_query = sql_base + filter_sql + f" ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
+        
+        print(full_query)
+        print(params)
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [CapturaAnalitica(id=int(r[0]), supplierCnpj=r[1], issueDate=r[2], 
+                                     provider=r[3], totalValue=r[4], documentType=r[5]) for r in rows]
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)

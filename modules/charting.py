@@ -1,5 +1,6 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from dash import dash_table, html
 
 def create_combined_chart(data, bar_keys, line_key=None, bar_colors=None, bar_names=None, line_name=None, line_color=None, title=""):
     if not data:
@@ -69,26 +70,33 @@ def create_pie_chart(labels, values, colors, title, hole=0.3):
 
     return fig
 
-def create_table_chart(data, col_name, title=""):
+def create_table_chart(data, col_label, label_key, total_key, auto_key, title=""):
     if not data:
-        return go.Figure()
+        return go.Figure().update_layout(title="Sem dados", template="plotly_dark")
 
-    # Extraindo colunas
-    labels = [d['label'] for d in data[:10]]
-    totals = [f"{d['total']:,}".replace(",", ".") for d in data[:10]]
-    pcts = [f"{d['pct']:.1f}%" for d in data[:10]]
+    # Extração direta das chaves da API
+    labels = [str(d.get(label_key, 'N/A')) for d in data]
+    totals = [f"{d.get(total_key, 0):,}".replace(",", ".") for d in data]
+    
+    # Cálculo do % Manual direto na montagem da lista para a tabela
+    pcts = []
+    for d in data:
+        t = d.get(total_key, 0)
+        a = d.get(auto_key, 0)
+        p = ((t - a) / t * 100) if t > 0 else 0
+        pcts.append(f"{p:.1f}%")
 
     fig = go.Figure(data=[go.Table(
         header=dict(
-            values=[f'<b>{col_name}</b>', '<b>Total</b>', '<b>% Auto</b>'],
-            fill_color='#1f2937',
+            values=[f'<b>{col_label}</b>', '<b>Total Notas</b>', '<b>% Manual</b>'],
+            fill_color='#111827',
             align='left',
-            font=dict(color='white', size=13),
+            font=dict(color='#8B5CF6', size=13),
             height=35
         ),
         cells=dict(
             values=[labels, totals, pcts],
-            fill_color='rgba(0,0,0,0)', # Fundo transparente para casar com o story
+            fill_color='#1f2937',
             align='left',
             font=dict(color='#d1d5db', size=12),
             height=30
@@ -101,7 +109,47 @@ def create_table_chart(data, col_name, title=""):
         margin=dict(l=10, r=10, t=50, b=10),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Inter, sans-serif", color="#d1d5db"),
-        height=350 # Altura fixa para alinhar com os outros gráficos
+        font=dict(family="Inter, sans-serif", color="#d1d5db")
     )
     return fig
+
+def create_analytic_table(id, data, columns):
+    """
+    id: Identificador único para o callback de paginação
+    data: Lista de dicionários vinda da API
+    columns: Lista de dicts [{'name': 'CNPJ', 'id': 'supplierCnpj'}, ...]
+    """
+    return html.Div(style={'backgroundColor': '#1f2937', 'padding': '20px', 'borderRadius': '8px'}, children=[
+        dash_table.DataTable(
+            id=id,
+            columns=columns,
+            data=data,
+            # --- CONFIGURAÇÃO DE PAGINAÇÃO ---
+            page_current=0,
+            page_size=10,
+            page_action='custom',  # Indica que o Python/API vai processar as páginas
+            
+            # --- ESTILIZAÇÃO (Combinando com seu Plotly Dark) ---
+            style_table={'overflowX': 'auto'},
+            style_header={
+                'backgroundColor': '#111827',
+                'color': '#8B5CF6',
+                'fontWeight': 'bold',
+                'border': '1px solid #374151'
+            },
+            style_cell={
+                'backgroundColor': '#1f2937',
+                'color': '#d1d5db',
+                'padding': '10px',
+                'fontFamily': 'Inter, sans-serif',
+                'border': '1px solid #374151',
+                'textAlign': 'left'
+            },
+            style_data_conditional=[{
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#111827', # Efeito zebra
+            }],
+            # Botões de navegação customizados pelo CSS do Dash
+            style_as_list_view=True,
+        )
+    ])

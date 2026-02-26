@@ -4,9 +4,10 @@ import dash_bootstrap_components as dbc
 import layouts
 from constants import HTML_HOMEPAGE_CONTENT
 from datetime import datetime
-
+from dash import Input, Output, callback
 import logging
 import sys
+import api_client
 
 # Configure logging to output to the terminal (stdout)
 logging.basicConfig(
@@ -147,6 +148,23 @@ def render_content(tab, n_clicks, start, end, doc_types, status, grain):
     elif tab == 'tab-captura':
         return layouts.get_captura_layout(selected_grain=pd_grain, filters=api_filters, api_grain=grain)
     return html.Div("Conteúdo em desenvolvimento", style={'color': 'white'})
+
+@callback(
+    Output('tabela-analitica', 'data'),
+    Input('tabela-analitica', "page_current"),
+    Input('tabela-analitica', "page_size"),
+    Input('btn-apply', 'n_clicks'), # Trigger para atualizar quando filtrar
+    State('filter-date', 'start_date'),
+    State('filter-date', 'end_date'),
+)
+
+def update_table(page_current, page_size, n_clicks, start, end):
+    offset = page_current * page_size
+    api_filters = []
+    if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
+    if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
+    
+    return api_client.get_analitico(limit=page_size, offset=offset, customer='aegea_prod', filters=api_filters)
 
 if __name__ == '__main__':
     app.run(
