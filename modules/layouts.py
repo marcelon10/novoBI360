@@ -25,11 +25,11 @@ def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
         
     return resampled.to_dict('records')
 
-def get_captura_layout(selected_grain='ME', filters=None, api_grain='month'):
-    # 1. Busca os dados na API
-    captura_data = api_client.get_captura(filters=filters, customer='aegea_prod', grain=api_grain)
-    captura_fornecedores_data = api_client.get_captura_fornecedores(filters=filters, customer='aegea_prod')
-    captura_cidades_data = api_client.get_captura_cidades(filters=filters, customer='aegea_prod')
+def get_captura_layout(selected_grain='ME', api_data=None, api_grain='month'):
+    # Extraímos as chaves que o get_full_dashboard_data do api_client entrega
+    captura_data = api_data.get('series', [])
+    captura_fornecedores_data = api_data.get('suppliers', [])
+    captura_cidades_data = api_data.get('cities', [])
     
     if not captura_data:
         return html.Div("Sem dados para os filtros selecionados", 

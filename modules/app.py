@@ -8,6 +8,7 @@ from dash import Input, Output, callback
 import logging
 import sys
 import api_client
+from flask_caching import Cache
 
 # Configure logging to output to the terminal (stdout)
 logging.basicConfig(
@@ -25,6 +26,24 @@ app = dash.Dash(
     suppress_callback_exceptions=True, 
     external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME] # Added FontAwesome
 )
+
+# Configuração do Cache (em memória para ser ultra-rápido)
+cache = Cache(app.server, config={
+    'CACHE_TYPE': 'SimpleCache', 
+    'CACHE_DEFAULT_TIMEOUT': 300 # 5 minutos de "frescor" nos dados
+})
+
+@cache.memoize()
+def get_cached_dashboard_data(grain, customer, filters_tuple):
+    # O GraphQL deu erro porque recebeu uma tupla/lista de listas. 
+    # Precisamos converter cada tupla interna de volta para um dict.
+    filters_list = [dict(f) for f in filters_tuple]
+    
+    return api_client.get_full_dashboard_data(
+        grain=grain, 
+        customer=customer, 
+        filters=filters_list # Agora enviamos a lista de dicionários correta
+    )
 
 tab_style = {'backgroundColor': '#1f2937', 'color': '#d1d5db'}
 selected_style = {'backgroundColor': '#8B5CF6', 'color': 'white'}
@@ -133,38 +152,77 @@ def toggle_offcanvas(n1, is_open):
     State('filter-grain', 'value')
 )
 def render_content(tab, n_clicks, start, end, doc_types, status, grain):
-    
+    # Mapeamento de grão para o Pandas
     grain_map = {'day': 'D', 'week': 'W', 'month': 'ME'}
     pd_grain = grain_map.get(grain, 'ME')
     
+    # Construção dos filtros
     api_filters = []
     if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
     if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
-    if doc_types: api_filters.append({'field': 'document_type', 'value': ", ".join([f"'{item}'" for item in doc_types]), 'operator': 'in'})
-    if status: api_filters.append({'field': 'captura_status', 'value': status, 'operator': 'eq'})
+    if doc_types: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'document_type', 'value': formatted_docs, 'operator': 'in'})
+    if status: 
+        api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
 
     if tab == 'tab-resumo':
         return layouts.get_resumo_iframe(HTML_HOMEPAGE_CONTENT)
-    elif tab == 'tab-captura':
-        return layouts.get_captura_layout(selected_grain=pd_grain, filters=api_filters, api_grain=grain)
+    
+    if tab == 'tab-captura':
+        # 1. Transformamos a lista de dicts em tupla de tuplas para o cache aceitar como chave
+        filters_tuple = tuple(tuple(d.items()) for d in api_filters)
+        
+        # 2. Chamamos a função memoizada
+        dashboard_data = get_cached_dashboard_data(grain, 'aegea_prod', filters_tuple)
+        
+        # 3. Renderizamos o layout
+        grain_map = {'day': 'D', 'week': 'W', 'month': 'ME'}
+        return layouts.get_captura_layout(
+            selected_grain=grain_map.get(grain, 'ME'), 
+            api_data=dashboard_data, 
+            api_grain=grain
+        )
+        
     return html.Div("Conteúdo em desenvolvimento", style={'color': 'white'})
 
 @callback(
     Output('tabela-analitica', 'data'),
     Input('tabela-analitica', "page_current"),
     Input('tabela-analitica', "page_size"),
-    Input('btn-apply', 'n_clicks'), # Trigger para atualizar quando filtrar
+    Input('btn-apply', 'n_clicks'),
     State('filter-date', 'start_date'),
     State('filter-date', 'end_date'),
+    State('filter-doc', 'value'),    # Corrigido de filter-doc-type para filter-doc
+    State('filter-status', 'value')   # Este já estava correto na lista
 )
-
-def update_table(page_current, page_size, n_clicks, start, end):
-    offset = page_current * page_size
+def update_table(page_current, page_size, n_clicks, start, end, doc_types, status):
+    # O restante da lógica permanece...
+    current_page = page_current if page_current is not None else 0
+    offset = current_page * page_size
+    
     api_filters = []
+    
+    # Datas
     if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
     if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
     
-    return api_client.get_analitico(limit=page_size, offset=offset, customer='aegea_prod', filters=api_filters)
+    # Document Types (usando o id filter-doc)
+    if doc_types:
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'type', 'value': formatted_docs, 'operator': 'in'})
+    
+    # Status
+    if status:
+        api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
+    
+    return api_client.get_analitico(
+        limit=page_size, 
+        offset=offset, 
+        customer='aegea_prod', 
+        filters=api_filters
+    )
 
 if __name__ == '__main__':
     app.run(
