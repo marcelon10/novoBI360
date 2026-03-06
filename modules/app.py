@@ -44,6 +44,10 @@ def get_cached_dashboard_data(grain, customer, filters_tuple):
         customer=customer, 
         filters=filters_list # Agora enviamos a lista de dicionários correta
     )
+    
+@cache.memoize(timeout=3600) # Cache de 1 hora
+def get_cached_options(customer):
+    return api_client.get_filter_options(customer)
 
 tab_style = {'backgroundColor': '#1f2937', 'color': '#d1d5db'}
 selected_style = {'backgroundColor': '#8B5CF6', 'color': 'white'}
@@ -97,6 +101,18 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                     className="dark-dropdown"
                 ),
                 
+                html.P("Fluxo", className="mt-4 mb-1"),
+                dcc.Dropdown(id='filter-fluxo', placeholder="Selecione...", className="dark-dropdown"),
+
+                html.P("CNPJ Tomador", className="mt-4 mb-1"),
+                dcc.Dropdown(id='filter-tomador', placeholder="Selecione...", className="dark-dropdown"),
+
+                html.P("CNPJ Fornecedor", className="mt-4 mb-1"),
+                dcc.Dropdown(id='filter-fornecedor', placeholder="Selecione...", className="dark-dropdown"),
+
+                #html.P("Moeda", className="mt-4 mb-1"),
+                #dcc.Dropdown(id='filter-moeda', placeholder="Selecione...", className="dark-dropdown"),
+                
                 html.P("Granularidade", className="mt-4 mb-1"),
                 dcc.Dropdown(
                     id='filter-grain',
@@ -149,9 +165,12 @@ def toggle_offcanvas(n1, is_open):
     State('filter-date', 'end_date'),
     State('filter-doc', 'value'),
     State('filter-status', 'value'),
+    State('filter-fluxo', 'value'),
+    State('filter-tomador', 'value'),
+    State('filter-fornecedor', 'value'),
     State('filter-grain', 'value')
 )
-def render_content(tab, n_clicks, start, end, doc_types, status, grain):
+def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador, fornecedor, grain):
     # Mapeamento de grão para o Pandas
     grain_map = {'day': 'D', 'week': 'W', 'month': 'ME'}
     pd_grain = grain_map.get(grain, 'ME')
@@ -166,6 +185,18 @@ def render_content(tab, n_clicks, start, end, doc_types, status, grain):
         api_filters.append({'field': 'document_type', 'value': formatted_docs, 'operator': 'in'})
     if status: 
         api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
+    if fluxo: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'process_name', 'value': formatted_docs, 'operator': 'in'})
+    if fornecedor: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'supplier_cnpj', 'value': formatted_docs, 'operator': 'in'})
+    if tomador: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'customer_cnpj', 'value': formatted_docs, 'operator': 'in'})
 
     if tab == 'tab-resumo':
         return layouts.get_resumo_iframe(HTML_HOMEPAGE_CONTENT)
@@ -195,9 +226,12 @@ def render_content(tab, n_clicks, start, end, doc_types, status, grain):
     State('filter-date', 'start_date'),
     State('filter-date', 'end_date'),
     State('filter-doc', 'value'),    # Corrigido de filter-doc-type para filter-doc
-    State('filter-status', 'value')   # Este já estava correto na lista
+    State('filter-status', 'value'),
+    State('filter-fluxo', 'value'),
+    State('filter-tomador', 'value'),
+    State('filter-fornecedor', 'value'),# Este já estava correto na lista
 )
-def update_table(page_current, page_size, n_clicks, start, end, doc_types, status):
+def update_table(page_current, page_size, n_clicks, start, end, doc_types, status, fluxo, tomador, fornecedor):
     # O restante da lógica permanece...
     current_page = page_current if page_current is not None else 0
     offset = current_page * page_size
@@ -216,6 +250,20 @@ def update_table(page_current, page_size, n_clicks, start, end, doc_types, statu
     # Status
     if status:
         api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
+        
+    if fluxo: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'process_name', 'value': formatted_docs, 'operator': 'in'})
+    if fornecedor: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'supplier_cnpj', 'value': formatted_docs, 'operator': 'in'})
+    if tomador: 
+        # Formatando para o operador 'in' do SQL
+        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        api_filters.append({'field': 'customer_cnpj', 'value': formatted_docs, 'operator': 'in'})
+
     
     return api_client.get_analitico(
         limit=page_size, 
@@ -223,6 +271,21 @@ def update_table(page_current, page_size, n_clicks, start, end, doc_types, statu
         customer='aegea_prod', 
         filters=api_filters
     )
+
+@app.callback(
+    Output('filter-fluxo', 'options'),
+    Output('filter-fornecedor', 'options'),
+    Output('filter-tomador', 'options'),
+    Input('tabs', 'value') # Ou outro gatilho de inicialização
+)
+def load_dropdown_options(tab):
+    options = api_client.get_filter_options('aegea_prod')
+    
+    fluxo_opts = options.get('fluxos', [])
+    forn_opts = options.get('fornecedores', [])
+    tom_opts = options.get('tomadores', [])
+    
+    return fluxo_opts, forn_opts, tom_opts
 
 if __name__ == '__main__':
     app.run(

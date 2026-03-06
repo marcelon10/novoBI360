@@ -69,8 +69,7 @@ class Query:
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_teste_bi_captura
-        WHERE c_id = '{customer}'
+        FROM mview_process_'{customer}'
         """
         
         params = {}
@@ -109,8 +108,7 @@ class Query:
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_bi_captura_fornecedores
-        WHERE c_id = '{customer}'
+        FROM mview_process_'{customer}'
         """
         
         params = {}
@@ -149,8 +147,7 @@ class Query:
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_bi_captura_cidades
-        WHERE c_id = '{customer}'
+        FROM mview_process_'{customer}'
         """
         
         params = {}
@@ -220,6 +217,36 @@ class Query:
             rows = conn.execute(text(full_query), params).fetchall()
             return [CapturaAnalitica(id=int(r[0]), supplierCnpj=r[1], issueDate=r[2], 
                                      provider=r[3], totalValue=r[4], documentType=r[5]) for r in rows]
+            
+    @strawberry.field
+    def get_filter_options(self, customer: str) -> strawberry.scalars.JSON:
+        # Usamos a MView específica do cliente para Fornecedores (mais rápido)
+        # E a tax_documents para Tomadores e Moedas (filtrando pelo c_id)
+        
+        # 1. Query para Fluxos (Tabela de processos)
+        query_fluxos = f"SELECT DISTINCT process_name FROM mview_process_{customer} ORDER BY 1"
+        
+        # 2. Query para Fornecedores (Na MView do cliente)
+        query_fornecedores = f"SELECT DISTINCT supplier_cnpj FROM mview_process_{customer} WHERE supplier_cnpj IS NOT NULL ORDER BY 1"
+        
+        # 3. Query para Tomadores (Na tax_documents)
+        query_tomadores = f"SELECT DISTINCT customer_cnpj FROM mview_process_{customer} WHERE supplier_cnpj IS NOT NULL ORDER BY 1"
+
+        options = {
+            "fluxos": [],
+            "fornecedores": [],
+            "tomadores": []
+        }
+
+        with engine.connect() as conn:
+            try:
+                options["fluxos"] = [r[0] for r in conn.execute(text(query_fluxos), {"c": customer}).fetchall()]
+                options["fornecedores"] = [r[0] for r in conn.execute(text(query_fornecedores)).fetchall()]
+                options["tomadores"] = [r[0] for r in conn.execute(text(query_tomadores), {"c": customer}).fetchall()]
+            except Exception as e:
+                print(f"Erro ao buscar opções: {e}")
+                
+        return options
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)

@@ -13,18 +13,17 @@ def fetch_graphql_data(payload):
         print(f"API Connection Error: {e}")
         return None
     
-# def get_filter_options(customer):
-#     query = """
-#     query GetOptions($customer: String!) {
-#         fluxos: get_distinct_fluxos(customer: $customer)
-#         fornecedores: get_distinct_suppliers(customer: $customer)
-#         tomadores: get_distinct_customers(customer: $customer)
-#         moedas: get_distinct_currencies(customer: $customer)
-#     }
-#     """
-#     payload = {'query': query, 'variables': {'customer': customer}}
-#     res = fetch_graphql_data(payload)
-#     return res['data'] if res else {}
+def get_filter_options(customer):
+    query = """
+    query GetOptions($customer: String!) {
+        fluxos: get_distinct_fluxos(customer: $customer)
+        fornecedores: get_distinct_suppliers(customer: $customer)
+        tomadores: get_distinct_customers(customer: $customer)
+    }
+    """
+    payload = {'query': query, 'variables': {'customer': customer}}
+    res = fetch_graphql_data(payload)
+    return res['data'] if res else {}
 
 def get_full_dashboard_data(grain="month", customer=None, filters=None):
     """
