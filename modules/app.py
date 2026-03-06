@@ -102,13 +102,13 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                 ),
                 
                 html.P("Fluxo", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-fluxo', placeholder="Selecione...", className="dark-dropdown"),
+                dcc.Dropdown(id='filter-fluxo', multi=True, placeholder="Selecione...", className="dark-dropdown"),
 
                 html.P("CNPJ Tomador", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-tomador', placeholder="Selecione...", className="dark-dropdown"),
+                dcc.Dropdown(id='filter-tomador', multi=True, placeholder="Selecione...", className="dark-dropdown"),
 
                 html.P("CNPJ Fornecedor", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-fornecedor', placeholder="Selecione...", className="dark-dropdown"),
+                dcc.Dropdown(id='filter-fornecedor', multi=True, placeholder="Selecione...", className="dark-dropdown"),
 
                 #html.P("Moeda", className="mt-4 mb-1"),
                 #dcc.Dropdown(id='filter-moeda', placeholder="Selecione...", className="dark-dropdown"),
@@ -187,15 +187,15 @@ def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador,
         api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
     if fluxo: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in fluxo])
         api_filters.append({'field': 'process_name', 'value': formatted_docs, 'operator': 'in'})
     if fornecedor: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in fornecedor])
         api_filters.append({'field': 'supplier_cnpj', 'value': formatted_docs, 'operator': 'in'})
     if tomador: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in tomador])
         api_filters.append({'field': 'customer_cnpj', 'value': formatted_docs, 'operator': 'in'})
 
     if tab == 'tab-resumo':
@@ -206,7 +206,7 @@ def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador,
         filters_tuple = tuple(tuple(d.items()) for d in api_filters)
         
         # 2. Chamamos a função memoizada
-        dashboard_data = get_cached_dashboard_data(grain, 'aegea_prod', filters_tuple)
+        dashboard_data = get_cached_dashboard_data(grain, 'aegea', filters_tuple)
         
         # 3. Renderizamos o layout
         grain_map = {'day': 'D', 'week': 'W', 'month': 'ME'}
@@ -253,22 +253,22 @@ def update_table(page_current, page_size, n_clicks, start, end, doc_types, statu
         
     if fluxo: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in fluxo])
         api_filters.append({'field': 'process_name', 'value': formatted_docs, 'operator': 'in'})
     if fornecedor: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in fornecedor])
         api_filters.append({'field': 'supplier_cnpj', 'value': formatted_docs, 'operator': 'in'})
     if tomador: 
         # Formatando para o operador 'in' do SQL
-        formatted_docs = ", ".join([f"'{item}'" for item in doc_types])
+        formatted_docs = ", ".join([f"'{item}'" for item in tomador])
         api_filters.append({'field': 'customer_cnpj', 'value': formatted_docs, 'operator': 'in'})
 
     
     return api_client.get_analitico(
         limit=page_size, 
         offset=offset, 
-        customer='aegea_prod', 
+        customer='aegea', 
         filters=api_filters
     )
 
@@ -279,7 +279,7 @@ def update_table(page_current, page_size, n_clicks, start, end, doc_types, statu
     Input('tabs', 'value') # Ou outro gatilho de inicialização
 )
 def load_dropdown_options(tab):
-    options = api_client.get_filter_options('aegea_prod')
+    options = api_client.get_filter_options('aegea')
     
     fluxo_opts = options.get('fluxos', [])
     forn_opts = options.get('fornecedores', [])

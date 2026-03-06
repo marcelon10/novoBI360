@@ -14,16 +14,24 @@ def fetch_graphql_data(payload):
         return None
     
 def get_filter_options(customer):
+    # A query deve pedir o campo EXATO que está no api.py
     query = """
     query GetOptions($customer: String!) {
-        fluxos: get_distinct_fluxos(customer: $customer)
-        fornecedores: get_distinct_suppliers(customer: $customer)
-        tomadores: get_distinct_customers(customer: $customer)
+        getFilterOptions(customer: $customer)
     }
     """
-    payload = {'query': query, 'variables': {'customer': customer}}
+    payload = {
+        'query': query, 
+        'variables': {'customer': customer}
+    }
+    
     res = fetch_graphql_data(payload)
-    return res['data'] if res else {}
+    
+    if res and 'data' in res and res['data']:
+        # O Strawberry transforma CamelCase ou mantém o nome do método.
+        # Como definimos get_filter_options, ele costuma mapear para getFilterOptions
+        return res['data'].get('getFilterOptions', {})
+    return {}
 
 def get_full_dashboard_data(grain="month", customer=None, filters=None):
     """

@@ -69,7 +69,8 @@ class Query:
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_process_'{customer}'
+        FROM mview_process_{customer}
+        WHERE 1=1
         """
         
         params = {}
@@ -108,7 +109,8 @@ class Query:
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_process_'{customer}'
+        FROM mview_process_{customer}
+        WHERE 1=1
         """
         
         params = {}
@@ -143,11 +145,12 @@ class Query:
     def get_captura_cidades(self, customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[CapturaCidades]:
         sql_base = f"""
         SELECT
-            coalesce(currency, 'Sem Cidade') as currency,
+            coalesce(customer_cnpj, 'Sem Cidade') as currency,
             sum(total_notas) as total_count,
             sum(case when provider in ('CAPTURE', 'MAILBOX_CAPTURE') then total_notas else 0 end) as total_auto,
             document_type
-        FROM mview_process_'{customer}'
+        FROM mview_process_{customer}
+        WHERE 1=1
         """
         
         params = {}
@@ -183,7 +186,7 @@ class Query:
         sql_base = f"""
             SELECT id, supplier_cnpj, issue_date, provider, total_value, type as document_type
             FROM tax_documents
-            WHERE c_id = '{customer}'
+            WHERE c_id = '{customer}_prod'
         """
         
         params = {}
@@ -217,20 +220,18 @@ class Query:
             rows = conn.execute(text(full_query), params).fetchall()
             return [CapturaAnalitica(id=int(r[0]), supplierCnpj=r[1], issueDate=r[2], 
                                      provider=r[3], totalValue=r[4], documentType=r[5]) for r in rows]
-            
+
     @strawberry.field
     def get_filter_options(self, customer: str) -> strawberry.scalars.JSON:
-        # Usamos a MView específica do cliente para Fornecedores (mais rápido)
-        # E a tax_documents para Tomadores e Moedas (filtrando pelo c_id)
+        # 1. Query para Fluxos (Usando a MView do cliente)
+        # Note: Removi o WHERE c_id porque a mview_process_{customer} já é específica
+        query_fluxos = f"SELECT DISTINCT process_name FROM mview_process_{customer} WHERE process_name IS NOT NULL ORDER BY 1"
         
-        # 1. Query para Fluxos (Tabela de processos)
-        query_fluxos = f"SELECT DISTINCT process_name FROM mview_process_{customer} ORDER BY 1"
-        
-        # 2. Query para Fornecedores (Na MView do cliente)
+        # 2. Query para Fornecedores
         query_fornecedores = f"SELECT DISTINCT supplier_cnpj FROM mview_process_{customer} WHERE supplier_cnpj IS NOT NULL ORDER BY 1"
         
-        # 3. Query para Tomadores (Na tax_documents)
-        query_tomadores = f"SELECT DISTINCT customer_cnpj FROM mview_process_{customer} WHERE supplier_cnpj IS NOT NULL ORDER BY 1"
+        # 3. Query para Tomadores
+        query_tomadores = f"SELECT DISTINCT customer_cnpj FROM mview_process_{customer} WHERE customer_cnpj IS NOT NULL ORDER BY 1"
 
         options = {
             "fluxos": [],
@@ -240,11 +241,12 @@ class Query:
 
         with engine.connect() as conn:
             try:
-                options["fluxos"] = [r[0] for r in conn.execute(text(query_fluxos), {"c": customer}).fetchall()]
+                # Executando direto, já que o customer está injetado no nome da tabela via f-string
+                options["fluxos"] = [r[0] for r in conn.execute(text(query_fluxos)).fetchall()]
                 options["fornecedores"] = [r[0] for r in conn.execute(text(query_fornecedores)).fetchall()]
-                options["tomadores"] = [r[0] for r in conn.execute(text(query_tomadores), {"c": customer}).fetchall()]
+                options["tomadores"] = [r[0] for r in conn.execute(text(query_tomadores)).fetchall()]
             except Exception as e:
-                print(f"Erro ao buscar opções: {e}")
+                print(f"Erro ao buscar opções SQL: {e}")
                 
         return options
 
