@@ -153,3 +153,84 @@ def create_analytic_table(id, data, columns):
             style_as_list_view=True,
         )
     ])
+
+def create_percent_stacked_bar(data, x_key, bar_keys, bar_names=None, bar_colors=None, title=""):
+    if not data:
+        return go.Figure().update_layout(title="Sem dados", template="plotly_dark")
+
+    fig = go.Figure()
+
+    for i, key in enumerate(bar_keys):
+        name = bar_names[i] if bar_names else key
+        color = bar_colors[i] if bar_colors else None
+        
+        fig.add_trace(go.Bar(
+            name=name,
+            x=[d.get(x_key) for d in data],
+            y=[d.get(key, 0) for d in data],
+            marker_color=color,
+            # Mostra o valor percentual no hover de forma limpa
+            hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y}}%<extra></extra>"
+        ))
+
+    fig.update_layout(
+        barmode='stack',
+        title_text=title,
+        title_x=0.5,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        yaxis=dict(ticksuffix="%", range=[0, 100], showgrid=False),
+        xaxis=dict(showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        font=dict(family="Inter, sans-serif", color="#d1d5db"),
+        template="plotly_dark",
+        margin=dict(t=60, b=80, l=40, r=40)
+    )
+
+    return fig
+
+def create_delta_line_chart(data, line_keys, line_names=None, line_colors=None, title=""):
+    """
+    Cria um gráfico de linhas comparativo temporal.
+    line_keys: Lista com as duas chaves para comparar (ex: ['totalCount', 'totalComDivergencia'])
+    """
+    if not data:
+        return go.Figure().update_layout(title="Sem dados disponíveis", template="plotly_dark")
+    
+    fig = go.Figure()
+    
+    x_axis = [d.get('display_date', d.get('date', 'N/A')) for d in data]
+    
+    # Cores padrão caso não sejam enviadas (Roxo e Vermelho/Verde)
+    default_colors = ['#8B5CF6', '#EF4444', '#10B981', '#34D399']
+
+    for i, key in enumerate(line_keys):
+        name = line_names[i] if line_names else key
+        color = line_colors[i] if line_colors else default_colors[i % len(default_colors)]
+        
+        fig.add_trace(go.Scatter(
+            x=x_axis,
+            y=[d.get(key, 0) for d in data],
+            name=name,
+            mode='lines+markers',
+            line=dict(color=color, width=3),
+            marker=dict(size=8),
+            hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y}}<extra></extra>"
+        ))
+
+    fig.update_layout(
+        title_text=title,
+        title_x=0.5,
+        hovermode="x unified", # Mostra os dois valores ao mesmo tempo no hover
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        font=dict(family="Inter, sans-serif", size=12, color="#d1d5db"),
+        template="plotly_dark",
+        margin=dict(t=60, b=80, l=40, r=40)
+    )
+    
+    fig.update_xaxes(showgrid=False, zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor='#374151', zeroline=False)
+        
+    return fig

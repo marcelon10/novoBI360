@@ -33,13 +33,13 @@ def get_filter_options(customer):
         return res['data'].get('getFilterOptions', {})
     return {}
 
-def get_full_dashboard_data(grain="month", customer=None, filters=None):
+def get_full_captura_data(grain="month", customer=None, filters=None):
     """
     Traz Stories 1, 2 e 3 em uma única chamada de rede (Batching).
     Substitui a necessidade de chamar get_captura, get_captura_fornecedores e get_captura_cidades separadamente.
     """
     query = """
-    query GetDashboard($filters: [FilterInput!], $customer: String!, $grain: String!) {
+    query GetCaptura($filters: [FilterInput!], $customer: String!, $grain: String!) {
         series: getCaptura(filters: $filters, customer: $customer, grain: $grain) {
             date totalCount totalAuto documentType
         }
@@ -66,7 +66,7 @@ def get_full_dashboard_data(grain="month", customer=None, filters=None):
         return res['data']
     return {"series": [], "suppliers": [], "cities": []}
 
-def get_analitico(limit=10, offset=0, customer=None, filters=None):
+def get_captura_analitico(limit=10, offset=0, customer=None, filters=None):
     """
     Mantida separada para Story 4 devido à paginação e grande volume de dados.
     """
@@ -95,4 +95,52 @@ def get_analitico(limit=10, offset=0, customer=None, filters=None):
     res = fetch_graphql_data(payload)
     if res and 'data' in res:
         return res['data'].get('getCapturaAnalitico', [])
+    return []
+
+def get_full_divergencia_data(grain="month", customer=None, filters=None):
+    query = """
+    query GetDivergencia($filters: [FilterInput!], $customer: String!, $grain: String!) {
+        series: getDivergencia(filters: $filters, customer: $customer, grain: $grain) {
+            date totalCount totalComDivergencia documentType
+        }
+        suppliers: getDivergenciaFornecedores(filters: $filters, customer: $customer) {
+            supplierCnpj totalCount
+        }
+        types: getDivergenciaTipo(filters: $filters, customer: $customer) {
+            nomeDivergencia totalCount
+        }
+    }
+    """
+    payload = {
+        'query': query, 
+        'variables': {
+            'filters': filters or [],
+            'customer': customer,
+            'grain': grain
+        }
+    }
+    res = fetch_graphql_data(payload)
+    return res['data'] if res else {"series": [], "suppliers": [], "types": []}
+
+def get_divergencia_analitico(limit=10, offset=0, customer=None, filters=None):
+    query = """
+    query GetDivergenciaAnalitico($limit: Int!, $offset: Int!, $customer: String!, $filters: [FilterInput!]) {
+        getDivergenciaAnalitico(limit: $limit, offset: $offset, customer: $customer, filters: $filters) {
+            id nomeDivergencia idNota targetValue fieldValue createdAt
+        }
+    }
+    """
+    payload = {
+    'query': query,
+    'variables': {
+        'limit': limit,
+        'offset': offset,
+        'customer': customer,
+        'filters': filters or []
+        }
+    }
+
+    res = fetch_graphql_data(payload)
+    if res and 'data' in res:
+        return res['data'].get('getDivergenciaAnalitico', [])
     return []

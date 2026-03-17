@@ -145,29 +145,174 @@ def get_captura_layout(selected_grain='ME', api_data=None, api_grain='month'):
                 )
             ])
         ])
-    
-    # --- STORY 4 (DETALHAMENTO ANALÍTICO) ---
-    # Definimos as colunas que queremos exibir na tabela
-    colunas_analiticas = [
-        {"name": "ID da Nota", "id": "id"},
-        {"name": "CNPJ Fornecedor", "id": "supplierCnpj"},
-        {"name": "Data de Emissão", "id": "issueDate"},
-        {"name": "Tipo de Ingresso", "id": "provider"},
-        {"name": "Valor Total", "id": "totalValue"},
-        {"name": "Tipo do Documento", "id": "documentType"}
-    ]
 
     story4 = html.Div(style={'marginTop': '20px'}, children=[
         charting.create_analytic_table(
-            id='tabela-analitica', 
+            id='tabela-analitica-captura', 
             data=[], # Começa vazia, o callback preenche
-            columns=colunas_analiticas
+            columns=[]
         )
     ])
 
     return html.Div(
         style={"display": "flex", "flexDirection": "column", "gap": "20px"},
         children=[story1, story2, story3, story4] # Adicionado story3 aqui
+    )
+    
+def get_divergencia_layout(selected_grain='ME', api_data=None, api_grain='month'):
+    # Extraímos as chaves que o get_full_dashboard_data do api_client entrega
+    divergencia_data = api_data.get('series', [])
+    divergencia_fornecedores_data = api_data.get('suppliers', [])
+    divergencia_tipos_data = api_data.get('types', [])
+    
+    if not divergencia_data:
+        return html.Div("Sem dados para os filtros selecionados", 
+                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
+
+    # 2. KPIs e Processamento
+    total_val = sum(d.get('totalCount', 0) for d in divergencia_data)
+    com_divergencia_val = sum(d.get('totalComDivergencia', 0) for d in divergencia_data)
+    
+    chart_data_geral = aggregate_by_grain(divergencia_data, sum_cols=['totalCount', 'totalComDivergencia'], grain=selected_grain)
+    for row in chart_data_geral:
+        row['comDivergenciaPct'] = (row['totalComDivergencia'] / row['totalCount'] * 100) if row['totalCount'] > 0 else 0
+
+    comp_data = []
+    
+    df_div = pd.DataFrame(divergencia_data)
+    if not df_div.empty:
+        # 1. Agrupamos por tipo de documento para ter o total de cada um
+        type_group = df_div.groupby('documentType').agg({
+            'totalCount': 'sum',
+            'totalComDivergencia': 'sum'
+        }).reset_index()
+
+        # 2. Calculamos as fatias percentuais para compor a barra 100%
+        # 'Com Divergência %' + 'Sem Divergência %' sempre somarão 100
+        type_group['Com Divergência (%)'] = (type_group['totalComDivergencia'] / type_group['totalCount'] * 100).round(2)
+        type_group['Sem Divergência (%)'] = 100 - type_group['Com Divergência (%)']
+        
+        # 3. Adicionamos uma coluna de texto para o Hover (passar o mouse)
+        # Assim o usuário vê o número absoluto dentro da barra percentual
+        type_group['hover_text_com'] = type_group.apply(lambda r: f"{r['totalComDivergencia']} notas", axis=1)
+        type_group['hover_text_sem'] = type_group.apply(lambda r: f"{int(r['totalCount'] - r['totalComDivergencia'])} notas", axis=1)
+
+        # 4. Dados do Pie (Composição absoluta do erro total)
+        pie_df = type_group[type_group['totalComDivergencia'] > 0]
+        pie_labels = pie_df['documentType'].tolist()
+        pie_values = pie_df['totalComDivergencia'].tolist()
+
+        comp_data = type_group.to_dict('records')
+    else:
+        pie_labels, pie_values, comp_data = [], [], []
+        
+    # ... (Processamento do DataFrame que fizemos antes) ...
+    type_group['Com Divergência (%)'] = (type_group['totalComDivergencia'] / type_group['totalCount'] * 100).round(2)
+    type_group['Sem Divergência (%)'] = 100 - type_group['Com Divergência (%)']
+    comp_data = type_group.to_dict('records')
+
+    # Chamada da função reutilizável
+    fig_comp_tipo = charting.create_percent_stacked_bar(
+        data=comp_data,
+        x_key='documentType',
+        bar_keys=['Com Divergência (%)', 'Sem Divergência (%)'],
+        bar_names=['Divergente', 'Saudável'],
+        bar_colors=['#EF4444', '#10B981'],
+        title="Eficiência Proporcional por Tipo de Documento"
+    )
+
+    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
+    GRAPH_HEIGHT = "400px"
+
+    # --- AJUSTE STORY 1 ---
+    fig_geral = charting.create_combined_chart(
+        chart_data_geral, 
+        bar_keys=['totalComDivergencia', 'totalCount'], 
+        line_key='comDivergenciaPct',
+        bar_colors=['#8B5CF6', '#374151'], 
+        bar_names=['Sem Divergência', 'Com Divergência'],
+        title=f'Volume Total vs % Divergência ({selected_grain})'
+    ).update_layout(
+        legend=dict(
+            orientation="h", 
+            yanchor="top",
+            y=-0.15,      # Puxado para cima para acompanhar a altura menor
+            xanchor="center", 
+            x=0.5
+        ),
+        margin=dict(t=60, b=80, l=40, r=40), 
+        title=dict(y=0.98, x=0.5, xanchor='center')
+    )
+    
+    # Dentro de get_divergencia_layout
+    fig_delta_temporal = charting.create_delta_line_chart(
+        data=chart_data_geral, # O dado processado pelo aggregate_by_grain
+        line_keys=['totalCount', 'totalComDivergencia'],
+        line_names=['Total Processado', 'Com Divergência'],
+        line_colors=['#8B5CF6', '#EF4444'], # Roxo vs Vermelho
+        title="Evolução Temporal: Total vs Divergências"
+    )
+
+    # --- MONTAGEM DO LAYOUT ---
+    story1 = html.Div(style={'marginBottom': '20px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
+            components.create_divergencia_kpi_layout({'totalCount': total_val, 'totalComDivergencia': com_divergencia_val}),
+            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
+        ])
+    ])
+
+    # Renderização
+    story2 = html.Div(children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
+            dcc.Graph(figure=fig_comp_tipo, style={"height": "400px"}),
+            dcc.Graph(figure=charting.create_pie_chart(pie_labels, pie_values, ['#EF4444', '#F87171'], "Composição das Divergências"), style={"height": "400px"})
+        ])
+    ])
+    
+    story3 = html.Div(style={'marginBottom': '20px'}, children=[
+            html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
+                # Tabela de Fornecedores
+                dcc.Graph(
+                    figure=charting.create_table_chart(
+                        data=divergencia_fornecedores_data, 
+                        col_label="Fornecedor (CNPJ)", 
+                        label_key="supplierCnpj", # Chave exata da sua classe Captura no GraphQL
+                        total_key="totalCount",
+                        auto_key="totalComDivergencia",
+                        title="Top 10 Fornecedores por Divergência"
+                    ).update_layout(height=400),
+                    style={'height': '400px'}
+                ),
+                # Tabela de Cidades
+                dcc.Graph(
+                    figure=charting.create_table_chart(
+                        data=divergencia_tipos_data,
+                        col_label="Divergência", 
+                        label_key="nomeDivergencia", # Chave exata da sua classe Captura no GraphQL
+                        total_key="totalCount",
+                        auto_key="totalComDivergencia",
+                        title="Top 10 Divergências"
+                    ).update_layout(height=400),
+                    style={'height': '400px'}
+                )
+            ])
+        ])
+    
+    story4 = html.Div(style={'marginBottom': '20px', 'backgroundColor': '#1f2937', 'padding': '10px', 'borderRadius': '8px'}, children=[
+        dcc.Graph(figure=fig_delta_temporal, style={"height": GRAPH_HEIGHT})
+    ])
+    
+    story5 = html.Div(style={'marginTop': '20px'}, children=[
+        charting.create_analytic_table(
+            id='tabela-analitica-divergencias', 
+            data=[], # Começa vazia, o callback preenche
+            columns=[]
+        )
+    ])
+
+    return html.Div(
+        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
+        children=[story1, story2, story3, story4, story5] # Adicionado story3 aqui
     )
     
 def get_resumo_iframe(content):
