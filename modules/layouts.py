@@ -315,5 +315,122 @@ def get_divergencia_layout(selected_grain='ME', api_data=None, api_grain='month'
         children=[story1, story2, story3, story4, story5] # Adicionado story3 aqui
     )
     
+def get_notas_aberto_layout(selected_grain='ME', api_data=None, api_grain='month'):
+    notas_aberto_data = api_data.get('series', [])
+    notas_aberto_usuarios_data = api_data.get('usuarios', [])
+    notas_aberto_tarefas_data = api_data.get('tarefas', [])
+    
+    if not notas_aberto_data:
+        return html.Div("Sem dados para os filtros selecionados", 
+                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
+
+    # 2. KPIs e Processamento
+    em_aberto_val = sum(d.get('totalEmAberto', 0) for d in notas_aberto_data)
+    em_aberto_humanas_val = sum(d.get('totalEmAbertoHumanas', 0) for d in notas_aberto_data)
+    
+    chart_data_geral = aggregate_by_grain(notas_aberto_data, sum_cols=['totalEmAberto', 'totalEmAbertoHumanas'], grain=selected_grain)
+    for row in chart_data_geral:
+        row['totalEmAbertoSistemas'] = row['totalEmAberto'] - row['totalEmAbertoHumanas']
+        row['humanPct'] = (row['totalEmAbertoHumanas'] / row['totalEmAberto'] * 100) if row['totalEmAberto'] > 0 else 0
+
+    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
+    GRAPH_HEIGHT = "400px"
+
+    # --- AJUSTE STORY 1 ---
+    fig_geral = charting.create_combined_chart(
+        chart_data_geral, 
+        bar_keys=['totalEmAbertoHumanas', 'totalEmAbertoSistemas'], 
+        line_key='humanPct',
+        bar_colors=['#EF4444', '#3B82F6'], 
+        bar_names=['Pendência Humana', 'Pendência Sistema'],
+        title=f'Volume Em Aberto vs % Com Usuários ({selected_grain})'
+    ).update_layout(
+        barmode='stack',
+        legend=dict(
+            orientation="h", 
+            yanchor="top",
+            y=-0.15,
+            xanchor="center", 
+            x=0.5
+        ),
+        margin=dict(t=60, b=80, l=40, r=40), 
+        title=dict(y=0.98, x=0.5, xanchor='center')
+    )
+    
+    fig_delta_temporal = charting.create_delta_line_chart(
+        data=chart_data_geral, 
+        line_keys=['totalEmAberto', 'totalEmAbertoHumanas'],
+        line_names=['Total Em Aberto', 'Pendente Humano'],
+        line_colors=['#F59E0B', '#EF4444'],
+        title="Evolução Temporal: Em Aberto vs Com Usuários"
+    )
+
+    kpi_component = components.create_notas_aberto_kpi_layout({
+        'totalEmAberto': em_aberto_val, 
+        'totalEmAbertoHumanas': em_aberto_humanas_val
+    })
+
+    story1 = html.Div(style={'marginBottom': '20px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
+            kpi_component,
+            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
+        ])
+    ])
+
+    story2 = html.Div(children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
+            dcc.Graph(
+                figure=charting.create_table_chart(
+                    data=notas_aberto_tarefas_data, 
+                    col_label="Tarefa pendente", 
+                    label_key="nomeTarefa",
+                    total_key="totalCount",
+                    auto_key="totalCount", 
+                    title="Top 10 Tarefas em Aberto"
+                ).update_layout(height=400),
+                style={'height': '400px'}
+            ),
+            dcc.Graph(
+                figure=charting.create_pie_chart(
+                    ['Pendência Humana', 'Pendência Sistema'], 
+                    [em_aberto_humanas_val, em_aberto_val - em_aberto_humanas_val], 
+                    ['#EF4444', '#3B82F6'], 
+                    "Composição de Pendência"
+                ), 
+                style={"height": "400px"}
+            )
+        ])
+    ])
+    
+    story3 = html.Div(style={'marginBottom': '20px', 'marginTop': '20px'}, children=[
+        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
+            dcc.Graph(
+                figure=charting.create_table_chart(
+                    data=notas_aberto_usuarios_data, 
+                    col_label="Usuário", 
+                    label_key="userName",
+                    total_key="totalCount",
+                    auto_key="totalCount",
+                    title="Top 10 Usuários com Notas"
+                ).update_layout(height=400),
+                style={'height': '400px'}
+            ),
+            dcc.Graph(figure=fig_delta_temporal, style={"height": GRAPH_HEIGHT})
+        ])
+    ])
+    
+    story4 = html.Div(style={'marginTop': '20px'}, children=[
+        charting.create_analytic_table(
+            id='tabela-analitica-notas-aberto', 
+            data=[], 
+            columns=[]
+        )
+    ])
+
+    return html.Div(
+        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
+        children=[story1, story2, story3, story4]
+    )
+
 def get_resumo_iframe(content):
     return html.Iframe(srcDoc=content, style={'width': '100%', 'height': '2000px', 'border': 'none'})

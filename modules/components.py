@@ -224,3 +224,102 @@ def create_filter_box(title, options, placeholder, component_id=None):
         ],
         style={"padding": "10px"},
     )
+
+def create_notas_aberto_kpi_layout(data):
+    total_em_aberto = data.get("totalEmAberto", 0)
+    total_humanas = data.get("totalEmAbertoHumanas", 0)
+    total_sistemas = total_em_aberto - total_humanas
+    human_pct = (total_humanas / total_em_aberto * 100) if total_em_aberto > 0 else 0
+
+    return html.Div(
+        style={
+            "backgroundColor": "#1f2937",
+            "borderRadius": "8px",
+            "padding": "20px",
+            "textAlign": "center",
+            "height": "100%",
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "space-around",
+        },
+        children=[
+            html.Div(
+                [
+                    html.H2(
+                        f"{total_em_aberto:,}".replace(",", "."),
+                        style={
+                            "margin": "0",
+                            "color": "#F59E0B",
+                            "fontSize": "3em",
+                            "fontWeight": "900",
+                        },
+                    ),
+                    html.P(
+                        "Notas em Aberto",
+                        style={"margin": "0", "color": "#9ca3af", "fontSize": "1em"},
+                    ),
+                ]
+            ),
+            html.Div(
+                style={
+                    "display": "flex",
+                    "justifyContent": "space-around",
+                    "alignItems": "center",
+                    "margin": "20px 0",
+                },
+                children=[
+                    html.Div(
+                        [
+                            html.P(
+                                f"{total_humanas:,}".replace(",", "."),
+                                style={
+                                    "fontSize": "2em",
+                                    "fontWeight": "bold",
+                                    "color": "#d1d5db",
+                                    "margin": "0",
+                                },
+                            ),
+                            html.P(
+                                "Pendentes Humanos",
+                                style={"color": "#9ca3af", "margin": "0"},
+                            ),
+                        ]
+                    ),
+                    html.Div(
+                        [
+                            html.P(
+                                f"{total_sistemas:,}".replace(",", "."),
+                                style={
+                                    "fontSize": "2em",
+                                    "fontWeight": "bold",
+                                    "color": "#d1d5db",
+                                    "margin": "0",
+                                },
+                            ),
+                            html.P(
+                                "Pendentes Sistema",
+                                style={"color": "#9ca3af", "margin": "0"},
+                            ),
+                        ]
+                    ),
+                ],
+            ),
+            html.Div(
+                [
+                    html.H3(
+                        f"{human_pct:.0f}%",
+                        style={
+                            "margin": "0",
+                            "color": "#EF4444",
+                            "fontSize": "2.5em",
+                            "fontWeight": "bold",
+                        },
+                    ),
+                    html.P(
+                        "de notas paradas com usuários",
+                        style={"margin": "0", "color": "#9ca3af"},
+                    ),
+                ]
+            ),
+        ],
+    )

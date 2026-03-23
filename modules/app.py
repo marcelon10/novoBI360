@@ -45,6 +45,11 @@ def get_cached_divergencia_data(grain, customer, filters_tuple):
     filters_list = [dict(f) for f in filters_tuple]
     return api_client.get_full_divergencia_data(grain=grain, customer=customer, filters=filters_list)
 
+@cache.memoize()
+def get_cached_notas_aberto_data(grain, customer, filters_tuple):
+    filters_list = [dict(f) for f in filters_tuple]
+    return api_client.get_full_notas_aberto_data(grain=grain, customer=customer, filters=filters_list)
+
 # --- LÓGICA MODULAR PARA TABELAS ANALÍTICAS ---
 def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_types, status, fluxo, tomador, fornecedor):
     """
@@ -74,7 +79,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
     if status: 
         api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
 
-    customer_id = 'aegea'
+    customer_id = 'usiminas'
 
     if tab == 'tab-divergencia':
         cols = [
@@ -86,6 +91,14 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
             {"name": "Data", "id": "createdAt"}
         ]
         data = api_client.get_divergencia_analitico(limit=p_size, offset=offset, customer=customer_id, filters=api_filters)
+    elif tab == 'tab-notas-aberto':
+        cols = [
+            {"name": "ID", "id": "id"},
+            {"name": "Tarefa", "id": "nomeTarefa"},
+            {"name": "Usuário", "id": "userName"},
+            {"name": "Data", "id": "createdAt"}
+        ]
+        data = api_client.get_notas_aberto_analitico(limit=p_size, offset=offset, customer=customer_id, filters=api_filters)
     else:
         cols = [
             {"name": "ID Nota", "id": "id"},
@@ -136,7 +149,7 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
                 ),
                 
                 html.P("Tipo de Documento", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-doc', multi=True, placeholder="Selecione...", className="dark-dropdown"),
+                dcc.Dropdown(id='filter-doc', multi=True, placeholder="Selecione...", className="bg-dark text-white border-secondary"),
                 
                 html.P("Status", className="mt-4 mb-1"),
                 dcc.Dropdown(
@@ -184,6 +197,7 @@ app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh',
         dcc.Tab(label='Resumo', value='tab-resumo', style=tab_style, selected_style=selected_style),
         dcc.Tab(label='Captura', value='tab-captura', style=tab_style, selected_style=selected_style),
         dcc.Tab(label='Divergência', value='tab-divergencia', style=tab_style, selected_style=selected_style),
+        dcc.Tab(label='Notas em Aberto', value='tab-notas-aberto', style=tab_style, selected_style=selected_style),
     ]),
     
     html.Div(id='tabs-content', style={'marginTop': '20px'})
@@ -214,7 +228,7 @@ def toggle_offcanvas(n1, is_open):
     State('filter-grain', 'value')
 )
 def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador, fornecedor, grain):
-    customer_id = 'aegea'
+    customer_id = 'usiminas'
     
     # Construção dos filtros para API
     api_filters = []
@@ -254,6 +268,14 @@ def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador,
             api_grain=grain
         )
         
+    if tab == 'tab-notas-aberto':
+        notas_aberto_data = get_cached_notas_aberto_data(grain, customer_id, filters_tuple)
+        return layouts.get_notas_aberto_layout(
+            selected_grain={'day':'D','week':'W','month':'ME'}.get(grain, 'ME'), 
+            api_data=notas_aberto_data, 
+            api_grain=grain
+        )
+        
     return html.Div("Conteúdo não encontrado", style={'color': 'white'})
 
 # Callbacks Independentes para as Tabelas
@@ -278,6 +300,16 @@ def update_divergencia_table(*args):
     return fetch_table_data(*args)
 
 @app.callback(
+    [Output('tabela-analitica-notas-aberto', 'data'), Output('tabela-analitica-notas-aberto', 'columns')],
+    [Input('tabela-analitica-notas-aberto', "page_current"), Input('tabela-analitica-notas-aberto', "page_size"), Input('btn-apply', 'n_clicks')],
+    [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
+     State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value')]
+)
+def update_notas_aberto_table(*args):
+    return fetch_table_data(*args)
+
+@app.callback(
     Output('filter-fluxo', 'options'),
     Output('filter-fornecedor', 'options'),
     Output('filter-tomador', 'options'),
@@ -285,7 +317,7 @@ def update_divergencia_table(*args):
     Input('tabs', 'value')
 )
 def load_dropdown_options(tab):
-    options = api_client.get_filter_options('aegea')
+    options = api_client.get_filter_options('usiminas')
     return (
         options.get('fluxos', []), 
         options.get('fornecedores', []), 

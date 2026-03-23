@@ -85,6 +85,29 @@ class DivergenciaAnalitica:
     createdAt: str
 
 @strawberry.type
+class NotasAberto:
+    date: str
+    totalEmAberto: int
+    totalEmAbertoHumanas: int
+    
+@strawberry.type
+class NotasAbertoUsuario:
+    userName: str
+    totalCount: int
+
+@strawberry.type
+class NotasAbertoTarefa:
+    nomeTarefa: str
+    totalCount: int
+    
+@strawberry.type
+class NotasAbertoAnalitica:
+    id: int
+    createdAt: str
+    nomeTarefa: str
+    userName: str
+
+@strawberry.type
 class Query:
     @strawberry.field
     def get_captura(self, grain: str = "month", customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[Captura]:
@@ -445,6 +468,106 @@ class Query:
             return [DivergenciaAnalitica(id=int(r[0]), nomeDivergencia=r[1], idNota=r[2], 
                                      targetValue=r[3], fieldValue=r[4], createdAt=r[5]) for r in rows]                
 
+
+    @strawberry.field
+    def get_notas_aberto(self, grain: str = "month", customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[NotasAberto]:
+        sql_base = f"""
+        SELECT
+            date_trunc('{grain}', process_created_at)::text as {grain},
+            sum(case when horas_em_aberto is not null then total_notas else 0 end) as total_em_aberto,
+            sum(case when horas_em_aberto is not null and user_name is not null then total_notas else 0 end) as total_em_aberto_humanas
+        FROM mview_process_{customer}
+        WHERE horas_em_aberto is not null and user_name is not null 
+        """
+        params = {}
+        filter_sql = ""
+        if filters:
+            for i, f in enumerate(filters):
+                param_name = f"val_{i}"
+                if f.operator == "gte": filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte": filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in": filter_sql += f" AND {f.field} IN ({f.value})"
+                else: filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+        full_query = sql_base + filter_sql + " GROUP BY 1 ORDER BY 1"
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [NotasAberto(date=r[0], totalEmAberto=int(r[1]), totalEmAbertoHumanas=r[2]) for r in rows]
+
+    @strawberry.field
+    def get_notas_aberto_usuario(self, customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[NotasAbertoUsuario]:
+        sql_base = f"""
+        SELECT
+            user_name,
+            sum(total_notas) as total_count
+        FROM mview_process_{customer}
+        WHERE user_name is not null and horas_em_aberto is not null
+        """
+        params = {}
+        filter_sql = ""
+        if filters:
+            for i, f in enumerate(filters):                
+                param_name = f"val_{i}"
+                if f.operator == "gte": filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte": filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in": filter_sql += f" AND {f.field} IN ({f.value})"
+                else: filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+        full_query = sql_base + filter_sql + " GROUP BY user_name ORDER BY total_count DESC LIMIT 10"
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [NotasAbertoUsuario(userName=r[0], totalCount=r[1]) for r in rows]
+        
+    @strawberry.field
+    def get_notas_aberto_tarefa(self, customer: str = None, filters: Optional[List[FilterInput]] = None) -> List[NotasAbertoTarefa]:
+        sql_base = f"""
+        SELECT
+            last_task_name,
+            sum(total_notas) as total_count
+        FROM mview_process_{customer}
+        WHERE user_name is not null and horas_em_aberto is not null
+        """
+        params = {}
+        filter_sql = ""
+        if filters:
+            for i, f in enumerate(filters):                
+                param_name = f"val_{i}"
+                if f.operator == "gte": filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte": filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in": filter_sql += f" AND {f.field} IN ({f.value})"
+                else: filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+        full_query = sql_base + filter_sql + " GROUP BY last_task_name ORDER BY total_count DESC LIMIT 10"
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [NotasAbertoTarefa(nomeTarefa=r[0], totalCount=r[1]) for r in rows]
+
+    @strawberry.field
+    def get_notas_aberto_analitico(self, customer: str = None, limit: int = 50, offset: int = 0, filters: Optional[List[FilterInput]] = None) -> List[NotasAbertoAnalitica]:
+        sql_base = f"""
+            select id,
+            created_at, 
+            last_task_name,
+            assigned_user
+            from tax_documents
+            WHERE c_id = '{customer}_prod'
+            and completed_at is null and assigned_user is not null
+        """
+        params = {}
+        filter_sql = ""
+        if filters:
+            for i, f in enumerate(filters):
+                if f.field == 'process_created_at': f.field = 'created_at'
+                param_name = f"val_{i}"
+                if f.operator == "gte": filter_sql += f" AND {f.field} >= :{param_name}"
+                elif f.operator == "lte": filter_sql += f" AND {f.field} <= :{param_name}"
+                elif f.operator == "in": filter_sql += f" AND {f.field} IN ({f.value})"
+                else: filter_sql += f" AND {f.field} = :{param_name}"
+                params[param_name] = f.value
+        full_query = sql_base + filter_sql + f" ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
+        with engine.connect() as conn:
+            rows = conn.execute(text(full_query), params).fetchall()
+            return [NotasAbertoAnalitica(id=int(r[0]), createdAt=r[1], nomeTarefa=r[2], userName=r[3]) for r in rows]
 
 schema = strawberry.Schema(query=Query)
 graphql_app = GraphQLRouter(schema)

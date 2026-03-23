@@ -144,3 +144,51 @@ def get_divergencia_analitico(limit=10, offset=0, customer=None, filters=None):
     if res and 'data' in res:
         return res['data'].get('getDivergenciaAnalitico', [])
     return []
+
+def get_full_notas_aberto_data(grain="month", customer=None, filters=None):
+    query = """
+    query GetNotasAberto($filters: [FilterInput!], $customer: String!, $grain: String!) {
+        series: getNotasAberto(filters: $filters, customer: $customer, grain: $grain) {
+            date totalEmAberto totalEmAbertoHumanas
+        }
+        usuarios: getNotasAbertoUsuario(filters: $filters, customer: $customer) {
+            userName totalCount
+        }
+        tarefas: getNotasAbertoTarefa(filters: $filters, customer: $customer) {
+            nomeTarefa totalCount
+        }
+    }
+    """
+    payload = {
+        'query': query, 
+        'variables': {
+            'filters': filters or [],
+            'customer': customer,
+            'grain': grain
+        }
+    }
+    res = fetch_graphql_data(payload)
+    return res['data'] if res else {"series": [], "usuarios": [], "tarefas": []}
+
+def get_notas_aberto_analitico(limit=10, offset=0, customer=None, filters=None):
+    query = """
+    query GetNotasAbertoAnalitico($limit: Int!, $offset: Int!, $customer: String!, $filters: [FilterInput!]) {
+        getNotasAbertoAnalitico(limit: $limit, offset: $offset, customer: $customer, filters: $filters) {
+            id nomeTarefa userName createdAt
+        }
+    }
+    """
+    payload = {
+    'query': query,
+    'variables': {
+        'limit': limit,
+        'offset': offset,
+        'customer': customer,
+        'filters': filters or []
+        }
+    }
+
+    res = fetch_graphql_data(payload)
+    if res and 'data' in res:
+        return res['data'].get('getNotasAbertoAnalitico', [])
+    return []
