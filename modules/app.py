@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 from flask_caching import Cache
 import logging
 import sys
+import urllib.parse
 from datetime import datetime
 
 # Importações de módulos locais
@@ -50,8 +51,37 @@ def get_cached_notas_aberto_data(grain, customer, filters_tuple):
     filters_list = [dict(f) for f in filters_tuple]
     return api_client.get_full_notas_aberto_data(grain=grain, customer=customer, filters=filters_list)
 
+@cache.memoize()
+def get_cached_filter_options(customer):
+    return api_client.get_filter_options(customer)
+
+@cache.memoize()
+def get_cached_captura_analitico(limit, offset, customer, filters_tuple):
+    filters_list = [dict(f) for f in filters_tuple]
+    return api_client.get_captura_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+
+@cache.memoize()
+def get_cached_divergencia_analitico(limit, offset, customer, filters_tuple):
+    filters_list = [dict(f) for f in filters_tuple]
+    return api_client.get_divergencia_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+
+@cache.memoize()
+def get_cached_notas_aberto_analitico(limit, offset, customer, filters_tuple):
+    filters_list = [dict(f) for f in filters_tuple]
+    return api_client.get_notas_aberto_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+
+
+# --- STRATEGY: GET CUSTOMER FROM SEARCH ---
+def get_customer_from_search(search):
+    if search:
+        parsed = urllib.parse.parse_qs(search.lstrip('?'))
+        if 'customer' in parsed:
+            return parsed['customer'][0]
+    return 'usiminas'
+
+
 # --- LÓGICA MODULAR PARA TABELAS ANALÍTICAS ---
-def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_types, status, fluxo, tomador, fornecedor):
+def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_types, status, fluxo, tomador, fornecedor, search):
     """
     Função centralizada para processar dados das tabelas de ambas as abas.
     """
@@ -79,7 +109,8 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
     if status: 
         api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
 
-    customer_id = 'usiminas'
+    customer_id = get_customer_from_search(search)
+    filters_tuple = tuple(tuple(d.items()) for d in api_filters)
 
     if tab == 'tab-divergencia':
         cols = [
@@ -90,7 +121,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
             {"name": "Valor Real", "id": "fieldValue"},
             {"name": "Data", "id": "createdAt"}
         ]
-        data = api_client.get_divergencia_analitico(limit=p_size, offset=offset, customer=customer_id, filters=api_filters)
+        data = get_cached_divergencia_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
     elif tab == 'tab-notas-aberto':
         cols = [
             {"name": "ID", "id": "id"},
@@ -98,7 +129,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
             {"name": "Usuário", "id": "userName"},
             {"name": "Data", "id": "createdAt"}
         ]
-        data = api_client.get_notas_aberto_analitico(limit=p_size, offset=offset, customer=customer_id, filters=api_filters)
+        data = get_cached_notas_aberto_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
     else:
         cols = [
             {"name": "ID Nota", "id": "id"},
@@ -108,7 +139,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_typ
             {"name": "Valor Total", "id": "totalValue"},
             {"name": "Tipo", "id": "documentType"}
         ]
-        data = api_client.get_captura_analitico(limit=p_size, offset=offset, customer=customer_id, filters=api_filters)
+        data = get_cached_captura_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
         
     return data, cols
 
@@ -218,6 +249,7 @@ def toggle_offcanvas(n1, is_open):
     Output('tabs-content', 'children'),
     Input('tabs', 'value'),
     Input('btn-apply', 'n_clicks'),
+    Input('url', 'search'),
     State('filter-date', 'start_date'),
     State('filter-date', 'end_date'),
     State('filter-doc', 'value'),
@@ -227,8 +259,8 @@ def toggle_offcanvas(n1, is_open):
     State('filter-fornecedor', 'value'),
     State('filter-grain', 'value')
 )
-def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador, fornecedor, grain):
-    customer_id = 'usiminas'
+def render_content(tab, n_clicks, search, start, end, doc_types, status, fluxo, tomador, fornecedor, grain):
+    customer_id = get_customer_from_search(search)
     
     # Construção dos filtros para API
     api_filters = []
@@ -284,7 +316,7 @@ def render_content(tab, n_clicks, start, end, doc_types, status, fluxo, tomador,
     [Input('tabela-analitica-captura', "page_current"), Input('tabela-analitica-captura', "page_size"), Input('btn-apply', 'n_clicks')],
     [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
      State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value')]
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
 )
 def update_captura_table(*args):
     return fetch_table_data(*args)
@@ -294,7 +326,7 @@ def update_captura_table(*args):
     [Input('tabela-analitica-divergencias', "page_current"), Input('tabela-analitica-divergencias', "page_size"), Input('btn-apply', 'n_clicks')],
     [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
      State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value')]
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
 )
 def update_divergencia_table(*args):
     return fetch_table_data(*args)
@@ -304,7 +336,7 @@ def update_divergencia_table(*args):
     [Input('tabela-analitica-notas-aberto', "page_current"), Input('tabela-analitica-notas-aberto', "page_size"), Input('btn-apply', 'n_clicks')],
     [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
      State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value')]
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
 )
 def update_notas_aberto_table(*args):
     return fetch_table_data(*args)
@@ -314,10 +346,12 @@ def update_notas_aberto_table(*args):
     Output('filter-fornecedor', 'options'),
     Output('filter-tomador', 'options'),
     Output('filter-doc', 'options'),
-    Input('tabs', 'value')
+    Input('tabs', 'value'),
+    Input('url', 'search')
 )
-def load_dropdown_options(tab):
-    options = api_client.get_filter_options('usiminas')
+def load_dropdown_options(tab, search):
+    customer_id = get_customer_from_search(search)
+    options = get_cached_filter_options(customer_id)
     return (
         options.get('fluxos', []), 
         options.get('fornecedores', []), 
