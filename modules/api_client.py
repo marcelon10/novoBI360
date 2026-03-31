@@ -1,10 +1,34 @@
 import requests
+import json
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 API_URL = "http://localhost:8000/graphql"
 
+# Persistent session: reuses TCP connections (HTTP keep-alive) across all requests.
+# The pool keeps up to 10 connections open so concurrent workers don't pay
+# TCP handshake overhead on every GraphQL call.
+_session = requests.Session()
+_adapter = HTTPAdapter(
+    pool_connections=10,
+    pool_maxsize=20,
+    max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
+)
+_session.mount("http://", _adapter)
+_session.mount("https://", _adapter)
+
 def fetch_graphql_data(payload):
+    print("\n" + "="*40)
+    print("🚀 LIVE API REQUEST")
+    print(f"URL: {API_URL}")
+    print("Payload:")
     try:
-        response = requests.post(API_URL, json=payload, timeout=60)
+        print(json.dumps(payload, indent=2))
+    except TypeError:
+        print(payload)
+    print("="*40 + "\n")
+    try:
+        response = _session.post(API_URL, json=payload, timeout=60)
         if response.status_code != 200:
             print(f"GraphQL Error: {response.text}")
         response.raise_for_status()

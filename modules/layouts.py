@@ -1,436 +1,393 @@
 import pandas as pd
 from dash import html, dcc
-import api_client
 import charting
-import components
+import components  # noqa: F401 (used via components.kpi_card etc.)
+
+# ── Brand tokens (mirror charting.py) ────────────────────────────────────────
+C_PURPLE = '#592a9e'
+C_ORANGE = '#e16500'
+C_NAVY   = '#151731'
+C_GRAY   = '#6b7280'
+C_RED    = '#ef4444'
+C_GREEN  = '#22c55e'
+C_WHITE  = '#ffffff'
+C_BG     = '#f5f3ff'   # very light purple page background
+FONT     = 'Ubuntu, sans-serif'
+GRAPH_H  = 320          # standard chart height in px
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def aggregate_by_grain(data, date_col='date', sum_cols=None, grain='ME'):
     if not data:
         return []
-    
     sum_cols = sum_cols or []
     df = pd.DataFrame(data)
-    df[date_col] = pd.to_datetime(df[date_col]) 
-    
+    df[date_col] = pd.to_datetime(df[date_col])
     agg_map = {col: 'sum' for col in sum_cols}
     resampled = df.set_index(date_col).resample(grain).agg(agg_map).reset_index()
-    
-    date_formats = {
-        'ME': '%b %Y',
-        'W': 'W%U %Y',
-        'D': '%d/%m/%y'
-    }
-    fmt = date_formats.get(grain, '%d/%m/%y')
+    fmt = {'ME': '%b %Y', 'W': 'W%U %Y', 'D': '%d/%m/%y'}.get(grain, '%d/%m/%y')
     resampled['display_date'] = resampled[date_col].dt.strftime(fmt)
-        
     return resampled.to_dict('records')
 
-def get_captura_layout(selected_grain='ME', api_data=None, api_grain='month'):
-    # Extraímos as chaves que o get_full_dashboard_data do api_client entrega
-    captura_data = api_data.get('series', [])
-    captura_fornecedores_data = api_data.get('suppliers', [])
-    captura_cidades_data = api_data.get('cities', [])
-    
-    if not captura_data:
-        return html.Div("Sem dados para os filtros selecionados", 
-                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
 
-    # 2. KPIs e Processamento
-    total_val = sum(d.get('totalCount', 0) for d in captura_data)
-    auto_val = sum(d.get('totalAuto', 0) for d in captura_data)
-    
-    chart_data_geral = aggregate_by_grain(captura_data, sum_cols=['totalCount', 'totalAuto'], grain=selected_grain)
-    for row in chart_data_geral:
-        row['manualCount'] = row['totalCount'] - row['totalAuto']
-        row['autoPct'] = (row['totalAuto'] / row['totalCount'] * 100) if row['totalCount'] > 0 else 0
+def _chart_card(title, graph_or_component):
+    """White rounded card wrapping a Plotly graph or any component."""
+    return html.Div(
+        style={
+            'backgroundColor': C_WHITE,
+            'borderRadius': '12px',
+            'padding': '20px',
+            'boxShadow': '0 1px 6px rgba(0,0,0,0.08)',
+            'border': '1px solid #e5e7eb',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'gap': '8px',
+        },
+        children=[
+            html.Div([
+                html.H3(title, style={
+                    'margin': 0, 'fontSize': '14px', 'fontWeight': '600',
+                    'color': C_NAVY, 'fontFamily': FONT,
+                }),
+                html.Span('Ver detalhes →', style={
+                    'color': C_PURPLE, 'fontSize': '12px',
+                    'fontFamily': FONT, 'cursor': 'default',
+                }),
+            ]),
+            graph_or_component,
+        ],
+    )
 
-    # 3. Processamento Story 2
-    type_totals = {}
-    time_type_map = {}
-    for d in captura_data:
-        dt = d['date']; t = d.get('documentType', 'N/A'); count = d.get('totalCount', 0)
-        type_totals[t] = type_totals.get(t, 0) + count
-        if dt not in time_type_map: time_type_map[dt] = {'date': dt}
-        time_type_map[dt][t] = time_type_map[dt].get(t, 0) + count
 
-    pie_labels = list(type_totals.keys()); pie_values = list(type_totals.values())
-    stacked_data = aggregate_by_grain(list(time_type_map.values()), sum_cols=pie_labels, grain=selected_grain)
+def _graph(fig, height=GRAPH_H):
+    return dcc.Graph(
+        figure=fig,
+        style={'height': f'{height}px'},
+        config={'displayModeBar': False},
+    )
 
-    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
-    GRAPH_HEIGHT = "400px"
 
-    # --- AJUSTE STORY 1 ---
-    fig_geral = charting.create_combined_chart(
-        chart_data_geral, 
-        bar_keys=['totalAuto', 'manualCount'], 
+def _kpi_row(cards):
+    return html.Div(
+        style={
+            'display': 'grid',
+            'gridTemplateColumns': f'repeat({len(cards)}, 1fr)',
+            'gap': '16px',
+        },
+        children=cards,
+    )
+
+
+def _section(title, content):
+    return html.Div(
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '16px'},
+        children=[
+            html.H2(title, style={
+                'margin': 0, 'fontSize': '16px', 'fontWeight': '700',
+                'color': C_NAVY, 'fontFamily': FONT,
+            }),
+            content,
+        ],
+    )
+
+
+def _grid(*children, cols=3):
+    return html.Div(
+        style={
+            'display': 'grid',
+            'gridTemplateColumns': f'repeat({cols}, 1fr)',
+            'gap': '16px',
+        },
+        children=list(children),
+    )
+
+
+def _no_data():
+    return html.Div(
+        'Sem dados para os filtros selecionados.',
+        style={
+            'color': C_GRAY, 'padding': '40px',
+            'textAlign': 'center', 'fontFamily': FONT,
+        },
+    )
+
+
+# ── Captura ───────────────────────────────────────────────────────────────────
+
+def get_captura_layout(selected_grain='ME', api_data=None, api_grain=None):
+    series     = (api_data or {}).get('series', [])
+    suppliers  = (api_data or {}).get('suppliers', [])
+    cities     = (api_data or {}).get('cities', [])
+
+    if not series:
+        return _no_data()
+
+    total    = sum(d.get('totalCount', 0) for d in series)
+    auto     = sum(d.get('totalAuto',  0) for d in series)
+    manual   = total - auto
+    auto_pct = (auto / total * 100) if total > 0 else 0
+
+    chart_data = aggregate_by_grain(series, sum_cols=['totalCount', 'totalAuto'], grain=selected_grain)
+    for r in chart_data:
+        r['manualCount'] = r['totalCount'] - r['totalAuto']
+        r['autoPct']     = (r['totalAuto'] / r['totalCount'] * 100) if r['totalCount'] > 0 else 0
+
+    # type breakdown for stacked + pie
+    type_totals  = {}
+    time_type    = {}
+    for d in series:
+        dt = d['date']; t = d.get('documentType', 'N/A'); c = d.get('totalCount', 0)
+        type_totals[t] = type_totals.get(t, 0) + c
+        if dt not in time_type:
+            time_type[dt] = {'date': dt}
+        time_type[dt][t] = time_type[dt].get(t, 0) + c
+
+    pie_labels   = list(type_totals.keys())
+    pie_values   = list(type_totals.values())
+    stacked_data = aggregate_by_grain(list(time_type.values()), sum_cols=pie_labels, grain=selected_grain)
+
+    fig_volume = charting.create_combined_chart(
+        chart_data,
+        bar_keys=['totalAuto', 'manualCount'],
         line_key='autoPct',
-        bar_colors=['#8B5CF6', '#374151'], 
+        bar_colors=[C_PURPLE, '#c4b5fd'],
         bar_names=['Automático', 'Manual'],
-        title=f'Volume Total vs % Automação ({selected_grain})'
-    ).update_layout(
-        legend=dict(
-            orientation="h", 
-            yanchor="top",
-            y=-0.15,      # Puxado para cima para acompanhar a altura menor
-            xanchor="center", 
-            x=0.5
-        ),
-        margin=dict(t=60, b=80, l=40, r=40), 
-        title=dict(y=0.98, x=0.5, xanchor='center')
     )
-
-    # --- AJUSTE STORY 2 ---
     fig_stacked = charting.create_combined_chart(
-        stacked_data, 
-        bar_keys=pie_labels, 
-        bar_names=pie_labels,
-        title='Composição por Tipo de Documento (Temporal)'
-    ).update_layout(
-        barmode='stack',
-        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
-        margin=dict(t=60, b=80, l=40, r=40),
-        title=dict(y=0.98, x=0.5, xanchor='center')
+        stacked_data, bar_keys=pie_labels, bar_names=pie_labels,
+    )
+    fig_stacked.update_layout(barmode='stack')
+    fig_pie = charting.create_pie_chart(pie_labels, pie_values, title='')
+
+    kpi_cards = _kpi_row([
+        components.kpi_card('Total de Notas',      f"{total:,}".replace(',', '.'), 'fas fa-file-invoice',  C_PURPLE),
+        components.kpi_card('Ingresso Automático', f"{auto_pct:.1f}%",             'fas fa-bolt',          C_ORANGE),
+        components.kpi_card('Notas Automáticas',   f"{auto:,}".replace(',', '.'),  'fas fa-robot',         C_PURPLE),
+        components.kpi_card('Ingresso Manual',     f"{manual:,}".replace(',', '.'), 'fas fa-hand-paper',   C_GRAY),
+    ])
+
+    charts_row1 = _grid(
+        _chart_card('Notas por Tipo de Ingresso',          _graph(fig_volume)),
+        _chart_card('Composição por Tipo de Documento',    _graph(fig_stacked)),
+        _chart_card('Distribuição Percentual',             _graph(fig_pie)),
+        cols=3,
     )
 
-    # --- MONTAGEM DO LAYOUT ---
-    story1 = html.Div(style={'marginBottom': '20px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
-            components.create_captura_kpi_layout({'totalCount': total_val, 'autoCount': auto_val}),
-            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
-        ])
-    ])
+    charts_row2 = _grid(
+        _chart_card(
+            'Top 10 Fornecedores',
+            _graph(charting.create_table_chart(
+                suppliers, 'Fornecedor', 'supplierCnpj', 'totalCount', 'totalAuto',
+            ), height=280),
+        ),
+        _chart_card(
+            'Top 10 Tomadores / Cidades',
+            _graph(charting.create_table_chart(
+                cities, 'Tomador', 'currency', 'totalCount', 'totalAuto',
+            ), height=280),
+        ),
+        cols=2,
+    )
 
-    story2 = html.Div(style={'backgroundColor': '#1f2937', 'padding': '20px', 'borderRadius': '8px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
-            dcc.Graph(figure=fig_stacked, style={"height": GRAPH_HEIGHT}), 
-            dcc.Graph(figure={
-                'data': [{'labels': pie_labels, 'values': pie_values, 'type': 'pie', 'hole': .4}],
-                'layout': {
-                    'template': 'plotly_dark', 
-                    'title': 'Composição (Percentual)',
-                    'paper_bgcolor': 'rgba(0,0,0,0)',
-                    'showlegend': False,
-                    'legend': {'orientation': 'h', 'y': -0.15, 'x': 0.5, 'xanchor': 'center'},
-                    'margin': {'t': 60, 'b': 80, 'l': 20, 'r': 20}
-                }
-            }, style={"height": GRAPH_HEIGHT})
-        ])
-    ])
-    
-    story3 = html.Div(style={'marginBottom': '20px'}, children=[
-            html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
-                # Tabela de Fornecedores
-                dcc.Graph(
-                    figure=charting.create_table_chart(
-                        data=captura_fornecedores_data, 
-                        col_label="Fornecedor (CNPJ)", 
-                        label_key="supplierCnpj", # Chave exata da sua classe Captura no GraphQL
-                        total_key="totalCount",
-                        auto_key="totalAuto",
-                        title="Top 10 Fornecedores por Volume"
-                    ).update_layout(height=400),
-                    style={'height': '400px'}
-                ),
-                # Tabela de Cidades
-                dcc.Graph(
-                    figure=charting.create_table_chart(
-                        data=captura_cidades_data,
-                        col_label="Cidade", 
-                        label_key="currency", # Chave exata da sua classe Captura no GraphQL
-                        total_key="totalCount",
-                        auto_key="totalAuto",
-                        title="Top 10 Cidades por Volume"
-                    ).update_layout(height=400),
-                    style={'height': '400px'}
-                )
-            ])
-        ])
-
-    story4 = html.Div(style={'marginTop': '20px'}, children=[
-        charting.create_analytic_table(
-            id='tabela-analitica-captura', 
-            data=[], # Começa vazia, o callback preenche
-            columns=[]
-        )
-    ])
+    analytic = charting.create_analytic_table(
+        id='tabela-analitica-captura', data=[], columns=[],
+    )
 
     return html.Div(
-        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
-        children=[story1, story2, story3, story4] # Adicionado story3 aqui
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '24px'},
+        children=[
+            _section('Indicadores de Ingresso', kpi_cards),
+            charts_row1,
+            charts_row2,
+            analytic,
+        ],
     )
-    
+
+
+# ── Divergência ───────────────────────────────────────────────────────────────
+
 def get_divergencia_layout(selected_grain='ME', api_data=None, api_grain='month'):
-    # Extraímos as chaves que o get_full_dashboard_data do api_client entrega
-    divergencia_data = api_data.get('series', [])
-    divergencia_fornecedores_data = api_data.get('suppliers', [])
-    divergencia_tipos_data = api_data.get('types', [])
-    
-    if not divergencia_data:
-        return html.Div("Sem dados para os filtros selecionados", 
-                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
+    series     = (api_data or {}).get('series', [])
+    suppliers  = (api_data or {}).get('suppliers', [])
+    tipos      = (api_data or {}).get('types', [])
 
-    # 2. KPIs e Processamento
-    total_val = sum(d.get('totalCount', 0) for d in divergencia_data)
-    com_divergencia_val = sum(d.get('totalComDivergencia', 0) for d in divergencia_data)
-    
-    chart_data_geral = aggregate_by_grain(divergencia_data, sum_cols=['totalCount', 'totalComDivergencia'], grain=selected_grain)
-    for row in chart_data_geral:
-        row['comDivergenciaPct'] = (row['totalComDivergencia'] / row['totalCount'] * 100) if row['totalCount'] > 0 else 0
+    if not series:
+        return _no_data()
 
-    comp_data = []
-    
-    df_div = pd.DataFrame(divergencia_data)
+    total   = sum(d.get('totalCount', 0) for d in series)
+    com_div = sum(d.get('totalComDivergencia', 0) for d in series)
+    pct     = (com_div / total * 100) if total > 0 else 0
+
+    chart_data = aggregate_by_grain(series, sum_cols=['totalCount', 'totalComDivergencia'], grain=selected_grain)
+    for r in chart_data:
+        r['comDivPct'] = (r['totalComDivergencia'] / r['totalCount'] * 100) if r['totalCount'] > 0 else 0
+
+    df_div = pd.DataFrame(series)
+    comp_data, pie_labels, pie_values = [], [], []
     if not df_div.empty:
-        # 1. Agrupamos por tipo de documento para ter o total de cada um
-        type_group = df_div.groupby('documentType').agg({
-            'totalCount': 'sum',
-            'totalComDivergencia': 'sum'
+        tg = df_div.groupby('documentType').agg({
+            'totalCount': 'sum', 'totalComDivergencia': 'sum',
         }).reset_index()
-
-        # 2. Calculamos as fatias percentuais para compor a barra 100%
-        # 'Com Divergência %' + 'Sem Divergência %' sempre somarão 100
-        type_group['Com Divergência (%)'] = (type_group['totalComDivergencia'] / type_group['totalCount'] * 100).round(2)
-        type_group['Sem Divergência (%)'] = 100 - type_group['Com Divergência (%)']
-        
-        # 3. Adicionamos uma coluna de texto para o Hover (passar o mouse)
-        # Assim o usuário vê o número absoluto dentro da barra percentual
-        type_group['hover_text_com'] = type_group.apply(lambda r: f"{r['totalComDivergencia']} notas", axis=1)
-        type_group['hover_text_sem'] = type_group.apply(lambda r: f"{int(r['totalCount'] - r['totalComDivergencia'])} notas", axis=1)
-
-        # 4. Dados do Pie (Composição absoluta do erro total)
-        pie_df = type_group[type_group['totalComDivergencia'] > 0]
+        tg['Com Divergência (%)'] = (tg['totalComDivergencia'] / tg['totalCount'] * 100).round(2)
+        tg['Sem Divergência (%)'] = 100 - tg['Com Divergência (%)']
+        pie_df    = tg[tg['totalComDivergencia'] > 0]
         pie_labels = pie_df['documentType'].tolist()
         pie_values = pie_df['totalComDivergencia'].tolist()
+        comp_data  = tg.to_dict('records')
 
-        comp_data = type_group.to_dict('records')
-    else:
-        pie_labels, pie_values, comp_data = [], [], []
-        
-    # ... (Processamento do DataFrame que fizemos antes) ...
-    type_group['Com Divergência (%)'] = (type_group['totalComDivergencia'] / type_group['totalCount'] * 100).round(2)
-    type_group['Sem Divergência (%)'] = 100 - type_group['Com Divergência (%)']
-    comp_data = type_group.to_dict('records')
-
-    # Chamada da função reutilizável
-    fig_comp_tipo = charting.create_percent_stacked_bar(
-        data=comp_data,
-        x_key='documentType',
-        bar_keys=['Com Divergência (%)', 'Sem Divergência (%)'],
-        bar_names=['Divergente', 'Saudável'],
-        bar_colors=['#EF4444', '#10B981'],
-        title="Eficiência Proporcional por Tipo de Documento"
+    fig_volume = charting.create_combined_chart(
+        chart_data,
+        bar_keys=['totalComDivergencia', 'totalCount'],
+        line_key='comDivPct',
+        bar_colors=[C_RED, '#fca5a5'],
+        bar_names=['Com Divergência', 'Sem Divergência'],
+    )
+    fig_comp = charting.create_percent_stacked_bar(
+        comp_data, 'documentType',
+        ['Com Divergência (%)', 'Sem Divergência (%)'],
+        ['Divergente', 'Saudável'],
+        [C_RED, C_GREEN],
+    )
+    fig_pie = charting.create_pie_chart(pie_labels, pie_values, [C_RED, '#fca5a5', '#fde68a'], title='')
+    fig_temporal = charting.create_delta_line_chart(
+        chart_data, ['totalCount', 'totalComDivergencia'],
+        ['Total Processado', 'Com Divergência'],
+        [C_PURPLE, C_RED],
     )
 
-    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
-    GRAPH_HEIGHT = "400px"
+    kpi_cards = _kpi_row([
+        components.kpi_card('Total de Notas',       f"{total:,}".replace(',', '.'),  'fas fa-file-invoice',        C_PURPLE),
+        components.kpi_card('Taxa de Divergência',  f"{pct:.1f}%",                  'fas fa-exclamation-triangle', C_RED),
+        components.kpi_card('Notas Divergentes',    f"{com_div:,}".replace(',', '.'), 'fas fa-times-circle',        C_RED),
+        components.kpi_card('Notas Saudáveis',      f"{total-com_div:,}".replace(',', '.'), 'fas fa-check-circle', '#22c55e'),
+    ])
 
-    # --- AJUSTE STORY 1 ---
-    fig_geral = charting.create_combined_chart(
-        chart_data_geral, 
-        bar_keys=['totalComDivergencia', 'totalCount'], 
-        line_key='comDivergenciaPct',
-        bar_colors=['#8B5CF6', '#374151'], 
-        bar_names=['Sem Divergência', 'Com Divergência'],
-        title=f'Volume Total vs % Divergência ({selected_grain})'
-    ).update_layout(
-        legend=dict(
-            orientation="h", 
-            yanchor="top",
-            y=-0.15,      # Puxado para cima para acompanhar a altura menor
-            xanchor="center", 
-            x=0.5
+    charts_row1 = _grid(
+        _chart_card('Volume vs % Divergência',                 _graph(fig_volume)),
+        _chart_card('Eficiência por Tipo de Documento',        _graph(fig_comp)),
+        _chart_card('Composição das Divergências',             _graph(fig_pie)),
+        cols=3,
+    )
+
+    charts_row2 = _grid(
+        _chart_card(
+            'Top 10 Fornecedores por Divergência',
+            _graph(charting.create_table_chart(
+                suppliers, 'Fornecedor', 'supplierCnpj', 'totalCount', 'totalCount',
+            ), height=280),
         ),
-        margin=dict(t=60, b=80, l=40, r=40), 
-        title=dict(y=0.98, x=0.5, xanchor='center')
-    )
-    
-    # Dentro de get_divergencia_layout
-    fig_delta_temporal = charting.create_delta_line_chart(
-        data=chart_data_geral, # O dado processado pelo aggregate_by_grain
-        line_keys=['totalCount', 'totalComDivergencia'],
-        line_names=['Total Processado', 'Com Divergência'],
-        line_colors=['#8B5CF6', '#EF4444'], # Roxo vs Vermelho
-        title="Evolução Temporal: Total vs Divergências"
+        _chart_card(
+            'Top 10 Tipos de Divergência',
+            _graph(charting.create_table_chart(
+                tipos, 'Divergência', 'nomeDivergencia', 'totalCount', 'totalCount',
+            ), height=280),
+        ),
+        _chart_card('Evolução Temporal', _graph(fig_temporal)),
+        cols=3,
     )
 
-    # --- MONTAGEM DO LAYOUT ---
-    story1 = html.Div(style={'marginBottom': '20px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
-            components.create_divergencia_kpi_layout({'totalCount': total_val, 'totalComDivergencia': com_divergencia_val}),
-            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
-        ])
-    ])
-
-    # Renderização
-    story2 = html.Div(children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
-            dcc.Graph(figure=fig_comp_tipo, style={"height": "400px"}),
-            dcc.Graph(figure=charting.create_pie_chart(pie_labels, pie_values, ['#EF4444', '#F87171'], "Composição das Divergências"), style={"height": "400px"})
-        ])
-    ])
-    
-    story3 = html.Div(style={'marginBottom': '20px'}, children=[
-            html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
-                # Tabela de Fornecedores
-                dcc.Graph(
-                    figure=charting.create_table_chart(
-                        data=divergencia_fornecedores_data, 
-                        col_label="Fornecedor (CNPJ)", 
-                        label_key="supplierCnpj", # Chave exata da sua classe Captura no GraphQL
-                        total_key="totalCount",
-                        auto_key="totalComDivergencia",
-                        title="Top 10 Fornecedores por Divergência"
-                    ).update_layout(height=400),
-                    style={'height': '400px'}
-                ),
-                # Tabela de Cidades
-                dcc.Graph(
-                    figure=charting.create_table_chart(
-                        data=divergencia_tipos_data,
-                        col_label="Divergência", 
-                        label_key="nomeDivergencia", # Chave exata da sua classe Captura no GraphQL
-                        total_key="totalCount",
-                        auto_key="totalComDivergencia",
-                        title="Top 10 Divergências"
-                    ).update_layout(height=400),
-                    style={'height': '400px'}
-                )
-            ])
-        ])
-    
-    story4 = html.Div(style={'marginBottom': '20px', 'backgroundColor': '#1f2937', 'padding': '10px', 'borderRadius': '8px'}, children=[
-        dcc.Graph(figure=fig_delta_temporal, style={"height": GRAPH_HEIGHT})
-    ])
-    
-    story5 = html.Div(style={'marginTop': '20px'}, children=[
-        charting.create_analytic_table(
-            id='tabela-analitica-divergencias', 
-            data=[], # Começa vazia, o callback preenche
-            columns=[]
-        )
-    ])
+    analytic = charting.create_analytic_table(
+        id='tabela-analitica-divergencias', data=[], columns=[],
+    )
 
     return html.Div(
-        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
-        children=[story1, story2, story3, story4, story5] # Adicionado story3 aqui
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '24px'},
+        children=[
+            _section('Indicadores de Divergências', kpi_cards),
+            charts_row1,
+            charts_row2,
+            analytic,
+        ],
     )
-    
+
+
+# ── Notas em Aberto ───────────────────────────────────────────────────────────
+
 def get_notas_aberto_layout(selected_grain='ME', api_data=None, api_grain='month'):
-    notas_aberto_data = api_data.get('series', [])
-    notas_aberto_usuarios_data = api_data.get('usuarios', [])
-    notas_aberto_tarefas_data = api_data.get('tarefas', [])
-    
-    if not notas_aberto_data:
-        return html.Div("Sem dados para os filtros selecionados", 
-                        style={'color': 'white', 'padding': '20px', 'textAlign': 'center'})
+    series   = (api_data or {}).get('series', [])
+    usuarios = (api_data or {}).get('usuarios', [])
+    tarefas  = (api_data or {}).get('tarefas', [])
 
-    # 2. KPIs e Processamento
-    em_aberto_val = sum(d.get('totalEmAberto', 0) for d in notas_aberto_data)
-    em_aberto_humanas_val = sum(d.get('totalEmAbertoHumanas', 0) for d in notas_aberto_data)
-    
-    chart_data_geral = aggregate_by_grain(notas_aberto_data, sum_cols=['totalEmAberto', 'totalEmAbertoHumanas'], grain=selected_grain)
-    for row in chart_data_geral:
-        row['totalEmAbertoSistemas'] = row['totalEmAberto'] - row['totalEmAbertoHumanas']
-        row['humanPct'] = (row['totalEmAbertoHumanas'] / row['totalEmAberto'] * 100) if row['totalEmAberto'] > 0 else 0
+    if not series:
+        return _no_data()
 
-    # --- CONFIGURAÇÃO DE ALTURA PADRÃO ---
-    GRAPH_HEIGHT = "400px"
+    total   = sum(d.get('totalEmAberto', 0) for d in series)
+    humanas = sum(d.get('totalEmAbertoHumanas', 0) for d in series)
+    sistemas = total - humanas
+    pct     = (humanas / total * 100) if total > 0 else 0
 
-    # --- AJUSTE STORY 1 ---
-    fig_geral = charting.create_combined_chart(
-        chart_data_geral, 
-        bar_keys=['totalEmAbertoHumanas', 'totalEmAbertoSistemas'], 
+    chart_data = aggregate_by_grain(series, sum_cols=['totalEmAberto', 'totalEmAbertoHumanas'], grain=selected_grain)
+    for r in chart_data:
+        r['totalSistema'] = r['totalEmAberto'] - r['totalEmAbertoHumanas']
+        r['humanPct']     = (r['totalEmAbertoHumanas'] / r['totalEmAberto'] * 100) if r['totalEmAberto'] > 0 else 0
+
+    fig_volume = charting.create_combined_chart(
+        chart_data,
+        bar_keys=['totalEmAbertoHumanas', 'totalSistema'],
         line_key='humanPct',
-        bar_colors=['#EF4444', '#3B82F6'], 
+        bar_colors=[C_RED, C_ORANGE],
         bar_names=['Pendência Humana', 'Pendência Sistema'],
-        title=f'Volume Em Aberto vs % Com Usuários ({selected_grain})'
-    ).update_layout(
-        barmode='stack',
-        legend=dict(
-            orientation="h", 
-            yanchor="top",
-            y=-0.15,
-            xanchor="center", 
-            x=0.5
+    )
+    fig_volume.update_layout(barmode='stack')
+    fig_temporal = charting.create_delta_line_chart(
+        chart_data, ['totalEmAberto', 'totalEmAbertoHumanas'],
+        ['Total Em Aberto', 'Pendente Humano'],
+        [C_ORANGE, C_RED],
+    )
+    fig_pie = charting.create_pie_chart(
+        ['Humana', 'Sistema'], [humanas, sistemas], [C_RED, C_ORANGE],
+    )
+
+    kpi_cards = _kpi_row([
+        components.kpi_card('Total em Aberto',    f"{total:,}".replace(',', '.'),    'fas fa-clock',  C_ORANGE),
+        components.kpi_card('Interação Humana',   f"{pct:.1f}%",                    'fas fa-user',   C_RED),
+        components.kpi_card('Pendência Humana',   f"{humanas:,}".replace(',', '.'),  'fas fa-user',   C_RED),
+        components.kpi_card('Pendência Sistema',  f"{sistemas:,}".replace(',', '.'), 'fas fa-robot',  C_PURPLE),
+    ])
+
+    charts_row1 = _grid(
+        _chart_card('Volume em Aberto por Tipo de Pendência', _graph(fig_volume)),
+        _chart_card('Evolução Temporal',                      _graph(fig_temporal)),
+        _chart_card('Composição de Pendências',               _graph(fig_pie)),
+        cols=3,
+    )
+
+    charts_row2 = _grid(
+        _chart_card(
+            'Top 10 Tarefas em Aberto',
+            _graph(charting.create_table_chart(
+                tarefas, 'Tarefa', 'nomeTarefa', 'totalCount', 'totalCount',
+            ), height=280),
         ),
-        margin=dict(t=60, b=80, l=40, r=40), 
-        title=dict(y=0.98, x=0.5, xanchor='center')
-    )
-    
-    fig_delta_temporal = charting.create_delta_line_chart(
-        data=chart_data_geral, 
-        line_keys=['totalEmAberto', 'totalEmAbertoHumanas'],
-        line_names=['Total Em Aberto', 'Pendente Humano'],
-        line_colors=['#F59E0B', '#EF4444'],
-        title="Evolução Temporal: Em Aberto vs Com Usuários"
+        _chart_card(
+            'Top 10 Usuários com Notas',
+            _graph(charting.create_table_chart(
+                usuarios, 'Usuário', 'userName', 'totalCount', 'totalCount',
+            ), height=280),
+        ),
+        cols=2,
     )
 
-    kpi_component = components.create_notas_aberto_kpi_layout({
-        'totalEmAberto': em_aberto_val, 
-        'totalEmAbertoHumanas': em_aberto_humanas_val
-    })
-
-    story1 = html.Div(style={'marginBottom': '20px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 2.5fr', 'gap': '20px'}, children=[
-            kpi_component,
-            dcc.Graph(figure=fig_geral, style={"height": GRAPH_HEIGHT}) 
-        ])
-    ])
-
-    story2 = html.Div(children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1.5fr 1fr', 'gap': '20px'}, children=[
-            dcc.Graph(
-                figure=charting.create_table_chart(
-                    data=notas_aberto_tarefas_data, 
-                    col_label="Tarefa pendente", 
-                    label_key="nomeTarefa",
-                    total_key="totalCount",
-                    auto_key="totalCount", 
-                    title="Top 10 Tarefas em Aberto"
-                ).update_layout(height=400),
-                style={'height': '400px'}
-            ),
-            dcc.Graph(
-                figure=charting.create_pie_chart(
-                    ['Pendência Humana', 'Pendência Sistema'], 
-                    [em_aberto_humanas_val, em_aberto_val - em_aberto_humanas_val], 
-                    ['#EF4444', '#3B82F6'], 
-                    "Composição de Pendência"
-                ), 
-                style={"height": "400px"}
-            )
-        ])
-    ])
-    
-    story3 = html.Div(style={'marginBottom': '20px', 'marginTop': '20px'}, children=[
-        html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '20px'}, children=[
-            dcc.Graph(
-                figure=charting.create_table_chart(
-                    data=notas_aberto_usuarios_data, 
-                    col_label="Usuário", 
-                    label_key="userName",
-                    total_key="totalCount",
-                    auto_key="totalCount",
-                    title="Top 10 Usuários com Notas"
-                ).update_layout(height=400),
-                style={'height': '400px'}
-            ),
-            dcc.Graph(figure=fig_delta_temporal, style={"height": GRAPH_HEIGHT})
-        ])
-    ])
-    
-    story4 = html.Div(style={'marginTop': '20px'}, children=[
-        charting.create_analytic_table(
-            id='tabela-analitica-notas-aberto', 
-            data=[], 
-            columns=[]
-        )
-    ])
+    analytic = charting.create_analytic_table(
+        id='tabela-analitica-notas-aberto', data=[], columns=[],
+    )
 
     return html.Div(
-        style={"display": "flex", "flexDirection": "column", "gap": "20px"},
-        children=[story1, story2, story3, story4]
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '24px'},
+        children=[
+            _section('Indicadores de Notas em Aberto', kpi_cards),
+            charts_row1,
+            charts_row2,
+            analytic,
+        ],
     )
+
+
+# ── Resumo (iframe) ───────────────────────────────────────────────────────────
 
 def get_resumo_iframe(content):
-    return html.Iframe(srcDoc=content, style={'width': '100%', 'height': '2000px', 'border': 'none'})
+    return html.Iframe(
+        srcDoc=content,
+        style={'width': '100%', 'height': '2000px', 'border': 'none'},
+    )

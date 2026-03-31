@@ -1,0 +1,22 @@
+# Frontend Core
+dash==2.15.0
+dash-bootstrap-components==1.5.0
+plotly==5.18.0
+pandas==2.2.0
+
+# Frontend Server
+gunicorn==21.2.0
+gevent==23.9.1
+Flask-Caching==2.1.0
+
+# Backend Core
+fastapi==0.109.2
+uvicorn==0.27.1
+strawberry-graphql==0.219.2
+
+# Database Handling
+SQLAlchemy==2.0.25
+psycopg2-binary==2.9.9
+
+# Utility
+requests==2.31.0

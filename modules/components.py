@@ -1,325 +1,199 @@
 from dash import html, dcc
-import dash_bootstrap_components as dbc
+
+# ── Brand tokens ──────────────────────────────────────────────────────────────
+FONT           = 'Ubuntu, sans-serif'
+C_PURPLE       = '#592a9e'
+C_PURPLE_LIGHT = '#783dbc'
+C_ORANGE       = '#e16500'
+C_NAVY         = '#151731'
+C_GRAY         = '#6b7280'
+C_GRAY_LIGHT   = '#e5e7eb'
+C_WHITE        = '#ffffff'
+C_RED          = '#ef4444'
 
 
-def create_captura_kpi_layout(data):
+# ── Reusable building blocks ──────────────────────────────────────────────────
 
-    total_invoices = data.get("totalCount", 0)
-    automatic_invoices = data.get("autoCount", 0)
-    manual_invoices = total_invoices - automatic_invoices
-    auto_pct = (automatic_invoices / total_invoices * 100) if total_invoices > 0 else 0
-
+def kpi_card(title, value, icon_class, color):
+    """White card with coloured icon, large metric value and a 'Ver detalhes' link."""
     return html.Div(
         style={
-            "backgroundColor": "#1f2937",
-            "borderRadius": "8px",
-            "padding": "20px",
-            "textAlign": "center",
-            "height": "100%",
-            "display": "flex",
-            "flexDirection": "column",
-            "justifyContent": "space-around",
+            'backgroundColor': C_WHITE,
+            'borderRadius': '12px',
+            'padding': '20px',
+            'boxShadow': '0 1px 6px rgba(0,0,0,0.08)',
+            'border': f'1px solid {C_GRAY_LIGHT}',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'gap': '10px',
+            'flex': '1',
+            'minWidth': '0',
         },
         children=[
+            html.P(title, style={
+                'margin': 0,
+                'fontSize': '13px',
+                'color': C_GRAY,
+                'fontFamily': FONT,
+                'fontWeight': '500',
+            }),
             html.Div(
-                [
-                    html.H2(
-                        f"{total_invoices:,}".replace(",", "."),
+                style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'},
+                children=[
+                    html.Span(
+                        html.I(className=icon_class),
                         style={
-                            "margin": "0",
-                            "color": "#8B5CF6",
-                            "fontSize": "3em",
-                            "fontWeight": "900",
+                            'backgroundColor': color + '1a',   # ~10 % opacity
+                            'color': color,
+                            'width': '36px',
+                            'height': '36px',
+                            'borderRadius': '50%',
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'justifyContent': 'center',
+                            'fontSize': '15px',
+                            'flexShrink': '0',
                         },
                     ),
-                    html.P(
-                        "Notas Ingressadas no Período",
-                        style={"margin": "0", "color": "#9ca3af", "fontSize": "1em"},
-                    ),
-                ]
-            ),
-            html.Div(
-                style={
-                    "display": "flex",
-                    "justifyContent": "space-around",
-                    "alignItems": "center",
-                    "margin": "20px 0",
-                },
-                children=[
-                    html.Div(
-                        [
-                            html.P(
-                                f"{automatic_invoices:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Capturadas Automaticamente",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
-                    ),
-                    html.Div(
-                        [
-                            html.P(
-                                f"{manual_invoices:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Ingressadas Manualmente",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
+                    html.H2(
+                        str(value),
+                        style={
+                            'margin': 0,
+                            'fontSize': '26px',
+                            'fontWeight': '700',
+                            'color': C_NAVY,
+                            'fontFamily': FONT,
+                            'lineHeight': '1',
+                            'overflow': 'hidden',
+                            'textOverflow': 'ellipsis',
+                            'whiteSpace': 'nowrap',
+                        },
                     ),
                 ],
             ),
-            html.Div(
-                [
-                    html.H3(
-                        f"{auto_pct:.0f}%",
-                        style={
-                            "margin": "0",
-                            "color": "#00b894",
-                            "fontSize": "2.5em",
-                            "fontWeight": "bold",
-                        },
-                    ),
-                    html.P(
-                        "de automatismo no ingresso de notas",
-                        style={"margin": "0", "color": "#9ca3af"},
-                    ),
-                ]
-            ),
+            html.Span('Ver detalhes →', style={
+                'color': C_PURPLE,
+                'fontSize': '12px',
+                'fontFamily': FONT,
+                'cursor': 'default',
+                'marginTop': '2px',
+            }),
         ],
     )
-    
-def create_divergencia_kpi_layout(data):
 
-    total_notas = data.get("totalCount", 0)
-    notas_com_divergencia = data.get("totalComDivergencia", 0)
-    notas_sem_divergencia = total_notas - notas_com_divergencia
-    auto_pct = (notas_com_divergencia / total_notas * 100) if total_notas > 0 else 0
 
+def chart_card(title, children):
+    """White card wrapper used around every chart/table in the grid."""
     return html.Div(
         style={
-            "backgroundColor": "#1f2937",
-            "borderRadius": "8px",
-            "padding": "20px",
-            "textAlign": "center",
-            "height": "100%",
-            "display": "flex",
-            "flexDirection": "column",
-            "justifyContent": "space-around",
+            'backgroundColor': C_WHITE,
+            'borderRadius': '12px',
+            'padding': '20px',
+            'boxShadow': '0 1px 6px rgba(0,0,0,0.08)',
+            'border': f'1px solid {C_GRAY_LIGHT}',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'gap': '12px',
         },
         children=[
             html.Div(
-                [
-                    html.H2(
-                        f"{total_notas:,}".replace(",", "."),
-                        style={
-                            "margin": "0",
-                            "color": "#8B5CF6",
-                            "fontSize": "3em",
-                            "fontWeight": "900",
-                        },
-                    ),
-                    html.P(
-                        "Notas Ingressadas no Período",
-                        style={"margin": "0", "color": "#9ca3af", "fontSize": "1em"},
-                    ),
-                ]
-            ),
-            html.Div(
-                style={
-                    "display": "flex",
-                    "justifyContent": "space-around",
-                    "alignItems": "center",
-                    "margin": "20px 0",
-                },
+                style={'display': 'flex', 'flexDirection': 'column', 'gap': '2px'},
                 children=[
-                    html.Div(
-                        [
-                            html.P(
-                                f"{notas_com_divergencia:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Notas com Divergência",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
-                    ),
-                    html.Div(
-                        [
-                            html.P(
-                                f"{notas_sem_divergencia:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Notas sem Divergência",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
-                    ),
+                    html.H3(title, style={
+                        'margin': 0,
+                        'fontSize': '14px',
+                        'fontWeight': '600',
+                        'color': C_NAVY,
+                        'fontFamily': FONT,
+                    }),
+                    html.Span('Ver detalhes →', style={
+                        'color': C_PURPLE,
+                        'fontSize': '12px',
+                        'fontFamily': FONT,
+                        'cursor': 'default',
+                    }),
                 ],
             ),
-            html.Div(
-                [
-                    html.H3(
-                        f"{auto_pct:.0f}%",
-                        style={
-                            "margin": "0",
-                            "color": "#00b894",
-                            "fontSize": "2.5em",
-                            "fontWeight": "bold",
-                        },
-                    ),
-                    html.P(
-                        "de Divergência",
-                        style={"margin": "0", "color": "#9ca3af"},
-                    ),
-                ]
-            ),
+            children,
+        ],
+    )
+
+
+def section_title(text):
+    return html.H2(text, style={
+        'margin': '0 0 16px 0',
+        'fontSize': '18px',
+        'fontWeight': '700',
+        'color': C_NAVY,
+        'fontFamily': FONT,
+    })
+
+
+# ── Legacy KPI blocks (kept so layouts.py still works) ────────────────────────
+
+def create_captura_kpi_layout(data):
+    total    = data.get('totalCount', 0)
+    auto     = data.get('autoCount', 0)
+    manual   = total - auto
+    auto_pct = (auto / total * 100) if total > 0 else 0
+
+    return html.Div(
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '12px'},
+        children=[
+            kpi_card('Total de Notas',         f"{total:,}".replace(',', '.'),  'fas fa-file-invoice',  C_PURPLE),
+            kpi_card('Ingresso Automático',    f"{auto_pct:.1f}%",              'fas fa-bolt',          C_ORANGE),
+            kpi_card('Ingresso Manual',        f"{manual:,}".replace(',', '.'), 'fas fa-hand-paper',    C_GRAY),
+        ],
+    )
+
+
+def create_divergencia_kpi_layout(data):
+    total   = data.get('totalCount', 0)
+    com_div = data.get('totalComDivergencia', 0)
+    pct     = (com_div / total * 100) if total > 0 else 0
+
+    return html.Div(
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '12px'},
+        children=[
+            kpi_card('Total de Notas',    f"{total:,}".replace(',', '.'),   'fas fa-file-invoice',        C_PURPLE),
+            kpi_card('Taxa Divergência',  f"{pct:.1f}%",                   'fas fa-exclamation-triangle', C_RED),
+            kpi_card('Com Divergência',   f"{com_div:,}".replace(',', '.'), 'fas fa-times-circle',         C_RED),
+        ],
+    )
+
+
+def create_notas_aberto_kpi_layout(data):
+    total    = data.get('totalEmAberto', 0)
+    humanas  = data.get('totalEmAbertoHumanas', 0)
+    sistemas = total - humanas
+    pct      = (humanas / total * 100) if total > 0 else 0
+
+    return html.Div(
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '12px'},
+        children=[
+            kpi_card('Total em Aberto',    f"{total:,}".replace(',', '.'),    'fas fa-clock',  C_ORANGE),
+            kpi_card('Interação Humana',   f"{pct:.1f}%",                    'fas fa-user',   C_RED),
+            kpi_card('Pendência Sistema',  f"{sistemas:,}".replace(',', '.'), 'fas fa-robot',  C_PURPLE),
         ],
     )
 
 
 def create_filter_box(title, options, placeholder, component_id=None):
     return html.Div(
-        [
-            html.P(
-                title,
-                style={
-                    "fontWeight": "bold",
-                    "marginBottom": "5px",
-                    "color": "#d1d5db",
-                    "fontSize": "0.9em",
-                },
-            ),
+        style={'marginBottom': '16px'},
+        children=[
+            html.P(title, style={
+                'fontWeight': '600',
+                'marginBottom': '6px',
+                'color': C_NAVY,
+                'fontSize': '13px',
+                'fontFamily': FONT,
+            }),
             dcc.Dropdown(
                 id=component_id,
                 options=options,
                 placeholder=placeholder,
-                className="dark-dropdown",
-            ),
-        ],
-        style={"padding": "10px"},
-    )
-
-def create_notas_aberto_kpi_layout(data):
-    total_em_aberto = data.get("totalEmAberto", 0)
-    total_humanas = data.get("totalEmAbertoHumanas", 0)
-    total_sistemas = total_em_aberto - total_humanas
-    human_pct = (total_humanas / total_em_aberto * 100) if total_em_aberto > 0 else 0
-
-    return html.Div(
-        style={
-            "backgroundColor": "#1f2937",
-            "borderRadius": "8px",
-            "padding": "20px",
-            "textAlign": "center",
-            "height": "100%",
-            "display": "flex",
-            "flexDirection": "column",
-            "justifyContent": "space-around",
-        },
-        children=[
-            html.Div(
-                [
-                    html.H2(
-                        f"{total_em_aberto:,}".replace(",", "."),
-                        style={
-                            "margin": "0",
-                            "color": "#F59E0B",
-                            "fontSize": "3em",
-                            "fontWeight": "900",
-                        },
-                    ),
-                    html.P(
-                        "Notas em Aberto",
-                        style={"margin": "0", "color": "#9ca3af", "fontSize": "1em"},
-                    ),
-                ]
-            ),
-            html.Div(
-                style={
-                    "display": "flex",
-                    "justifyContent": "space-around",
-                    "alignItems": "center",
-                    "margin": "20px 0",
-                },
-                children=[
-                    html.Div(
-                        [
-                            html.P(
-                                f"{total_humanas:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Pendentes Humanos",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
-                    ),
-                    html.Div(
-                        [
-                            html.P(
-                                f"{total_sistemas:,}".replace(",", "."),
-                                style={
-                                    "fontSize": "2em",
-                                    "fontWeight": "bold",
-                                    "color": "#d1d5db",
-                                    "margin": "0",
-                                },
-                            ),
-                            html.P(
-                                "Pendentes Sistema",
-                                style={"color": "#9ca3af", "margin": "0"},
-                            ),
-                        ]
-                    ),
-                ],
-            ),
-            html.Div(
-                [
-                    html.H3(
-                        f"{human_pct:.0f}%",
-                        style={
-                            "margin": "0",
-                            "color": "#EF4444",
-                            "fontSize": "2.5em",
-                            "fontWeight": "bold",
-                        },
-                    ),
-                    html.P(
-                        "de notas paradas com usuários",
-                        style={"margin": "0", "color": "#9ca3af"},
-                    ),
-                ]
+                style={'fontSize': '13px'},
             ),
         ],
     )

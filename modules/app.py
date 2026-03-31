@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, Input, Output, State, callback
+from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 from flask_caching import Cache
 import logging
@@ -7,49 +7,62 @@ import sys
 import urllib.parse
 from datetime import datetime
 
-# Importações de módulos locais
 import layouts
 import api_client
 from constants import HTML_HOMEPAGE_CONTENT
 
-# --- CONFIGURAÇÃO DE LOGGING ---
+# ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    stream=sys.stdout, level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
-logger = logging.getLogger('werkzeug')
-logger.setLevel(logging.INFO)
+logging.getLogger('werkzeug').setLevel(logging.INFO)
 
-# --- INICIALIZAÇÃO DO APP ---
+# ── Brand tokens ──────────────────────────────────────────────────────────────
+C_PURPLE       = '#592a9e'
+C_PURPLE_LIGHT = '#783dbc'
+C_ORANGE       = '#e16500'
+C_NAVY         = '#151731'
+C_GRAY         = '#6b7280'
+C_GRAY_LIGHT   = '#e5e7eb'
+C_WHITE        = '#ffffff'
+C_BG           = '#f5f3ff'
+FONT           = 'Ubuntu, sans-serif'
+
+# ── App ───────────────────────────────────────────────────────────────────────
 app = dash.Dash(
-    __name__, 
-    suppress_callback_exceptions=True, 
-    external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME]
+    __name__,
+    suppress_callback_exceptions=True,
+    external_stylesheets=[
+        dbc.themes.BOOTSTRAP,
+        dbc.icons.FONT_AWESOME,
+        'https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap',
+    ],
 )
 server = app.server
 
-# --- CONFIGURAÇÃO DE CACHE ---
+# ── Cache ─────────────────────────────────────────────────────────────────────
 cache = Cache(app.server, config={
-    'CACHE_TYPE': 'SimpleCache', 
-    'CACHE_DEFAULT_TIMEOUT': 300 
+    'CACHE_TYPE': 'FileSystemCache',
+    'CACHE_DIR': '/tmp/bi360_cache',
+    'CACHE_DEFAULT_TIMEOUT': 300,
 })
 
-# --- FUNÇÕES MEMOIZADAS (CACHE) ---
+# ── Memoized data fetchers ────────────────────────────────────────────────────
 @cache.memoize()
 def get_cached_captura_data(grain, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_full_captura_data(grain=grain, customer=customer, filters=filters_list)
+    return api_client.get_full_captura_data(grain=grain, customer=customer,
+                                             filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
 def get_cached_divergencia_data(grain, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_full_divergencia_data(grain=grain, customer=customer, filters=filters_list)
+    return api_client.get_full_divergencia_data(grain=grain, customer=customer,
+                                                 filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
 def get_cached_notas_aberto_data(grain, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_full_notas_aberto_data(grain=grain, customer=customer, filters=filters_list)
+    return api_client.get_full_notas_aberto_data(grain=grain, customer=customer,
+                                                  filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
 def get_cached_filter_options(customer):
@@ -57,21 +70,20 @@ def get_cached_filter_options(customer):
 
 @cache.memoize()
 def get_cached_captura_analitico(limit, offset, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_captura_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+    return api_client.get_captura_analitico(limit=limit, offset=offset, customer=customer,
+                                             filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
 def get_cached_divergencia_analitico(limit, offset, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_divergencia_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+    return api_client.get_divergencia_analitico(limit=limit, offset=offset, customer=customer,
+                                                 filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
 def get_cached_notas_aberto_analitico(limit, offset, customer, filters_tuple):
-    filters_list = [dict(f) for f in filters_tuple]
-    return api_client.get_notas_aberto_analitico(limit=limit, offset=offset, customer=customer, filters=filters_list)
+    return api_client.get_notas_aberto_analitico(limit=limit, offset=offset, customer=customer,
+                                                  filters=[dict(f) for f in filters_tuple])
 
-
-# --- STRATEGY: GET CUSTOMER FROM SEARCH ---
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def get_customer_from_search(search):
     if search:
         parsed = urllib.parse.parse_qs(search.lstrip('?'))
@@ -80,170 +92,361 @@ def get_customer_from_search(search):
     return 'usiminas'
 
 
-# --- LÓGICA MODULAR PARA TABELAS ANALÍTICAS ---
-def fetch_table_data(page_current, page_size, n_clicks, tab, start, end, doc_types, status, fluxo, tomador, fornecedor, search):
-    """
-    Função centralizada para processar dados das tabelas de ambas as abas.
-    """
-    p_current = page_current if page_current is not None else 0
-    p_size = page_size if page_size is not None else 10
-    offset = p_current * p_size
-    
-    api_filters = []
-    
-    # Filtros de Data
-    if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
-    if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
-    
-    # Helper para formatar filtros de multi-seleção (IN)
-    def add_in_filter(field, values):
+def build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor):
+    filters = []
+    if start: filters.append({'field': 'process_created_at', 'value': start,  'operator': 'gte'})
+    if end:   filters.append({'field': 'process_created_at', 'value': end,    'operator': 'lte'})
+
+    def add_in(field, values):
         if values and isinstance(values, list):
-            formatted = ", ".join([f"'{v}'" for v in values])
-            api_filters.append({'field': field, 'value': formatted, 'operator': 'in'})
+            filters.append({'field': field,
+                             'value': ', '.join(f"'{v}'" for v in values),
+                             'operator': 'in'})
 
-    add_in_filter('document_type', doc_types)
-    add_in_filter('process_name', fluxo)
-    add_in_filter('supplier_cnpj', fornecedor)
-    add_in_filter('customer_cnpj', tomador)
-    
-    if status: 
-        api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
+    add_in('document_type', doc_types)
+    add_in('process_name',  fluxo)
+    add_in('supplier_cnpj', fornecedor)
+    add_in('customer_cnpj', tomador)
+    if status:
+        filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
+    return filters
 
-    customer_id = get_customer_from_search(search)
-    filters_tuple = tuple(tuple(d.items()) for d in api_filters)
+
+def fetch_table_data(page_current, page_size, n_clicks, tab,
+                     start, end, doc_types, status, fluxo, tomador, fornecedor, search):
+    p   = page_current or 0
+    ps  = page_size or 10
+    off = p * ps
+    filters        = build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor)
+    customer_id    = get_customer_from_search(search)
+    filters_tuple  = tuple(tuple(d.items()) for d in filters)
 
     if tab == 'tab-divergencia':
         cols = [
-            {"name": "ID", "id": "id"},
-            {"name": "Divergência", "id": "nomeDivergencia"},
-            {"name": "ID Nota", "id": "idNota"},
-            {"name": "Valor Esperado", "id": "targetValue"},
-            {"name": "Valor Real", "id": "fieldValue"},
-            {"name": "Data", "id": "createdAt"}
+            {'name': 'ID',           'id': 'id'},
+            {'name': 'Divergência',  'id': 'nomeDivergencia'},
+            {'name': 'ID Nota',      'id': 'idNota'},
+            {'name': 'Valor Esperado','id': 'targetValue'},
+            {'name': 'Valor Real',   'id': 'fieldValue'},
+            {'name': 'Data',         'id': 'createdAt'},
         ]
-        data = get_cached_divergencia_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
+        data = get_cached_divergencia_analitico(ps, off, customer_id, filters_tuple)
     elif tab == 'tab-notas-aberto':
         cols = [
-            {"name": "ID", "id": "id"},
-            {"name": "Tarefa", "id": "nomeTarefa"},
-            {"name": "Usuário", "id": "userName"},
-            {"name": "Data", "id": "createdAt"}
+            {'name': 'ID',      'id': 'id'},
+            {'name': 'Tarefa',  'id': 'nomeTarefa'},
+            {'name': 'Usuário', 'id': 'userName'},
+            {'name': 'Data',    'id': 'createdAt'},
         ]
-        data = get_cached_notas_aberto_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
+        data = get_cached_notas_aberto_analitico(ps, off, customer_id, filters_tuple)
     else:
         cols = [
-            {"name": "ID Nota", "id": "id"},
-            {"name": "CNPJ Fornecedor", "id": "supplierCnpj"},
-            {"name": "Emissão", "id": "issueDate"},
-            {"name": "Ingresso", "id": "provider"},
-            {"name": "Valor Total", "id": "totalValue"},
-            {"name": "Tipo", "id": "documentType"}
+            {'name': 'ID Nota',         'id': 'id'},
+            {'name': 'CNPJ Fornecedor', 'id': 'supplierCnpj'},
+            {'name': 'Emissão',         'id': 'issueDate'},
+            {'name': 'Ingresso',        'id': 'provider'},
+            {'name': 'Valor Total',     'id': 'totalValue'},
+            {'name': 'Tipo',            'id': 'documentType'},
         ]
-        data = get_cached_captura_analitico(limit=p_size, offset=offset, customer=customer_id, filters_tuple=filters_tuple)
-        
+        data = get_cached_captura_analitico(ps, off, customer_id, filters_tuple)
+
     return data, cols
 
-# --- LAYOUT PRINCIPAL ---
-tab_style = {'backgroundColor': '#1f2937', 'color': '#d1d5db'}
-selected_style = {'backgroundColor': '#8B5CF6', 'color': 'white'}
 
-app.layout = html.Div(style={'backgroundColor': '#111827', 'minHeight': '100vh', 'padding': '20px'}, children=[
-    dcc.Location(id='url'),
-    
-    # Botão Flutuante de Filtros
-    html.Button(
-        html.I(className="fas fa-filter"),
-        id="open-filters",
-        n_clicks=0,
-        style={
-            'position': 'fixed', 'top': '20px', 'right': '20px', 'zIndex': '1000',
-            'backgroundColor': '#8B5CF6', 'color': 'white', 'border': 'none',
-            'borderRadius': '50%', 'width': '50px', 'height': '50px', 'boxShadow': '0 4px 10px rgba(0,0,0,0.3)'
-        }
-    ),
+# ── Shared styles ─────────────────────────────────────────────────────────────
+TAB_STYLE = {
+    'padding': '8px 20px',
+    'border': 'none',
+    'borderBottom': f'2px solid transparent',
+    'backgroundColor': 'transparent',
+    'color': C_GRAY,
+    'fontFamily': FONT,
+    'fontWeight': '500',
+    'fontSize': '14px',
+    'cursor': 'pointer',
+}
+TAB_SELECTED = {
+    **TAB_STYLE,
+    'color': C_PURPLE,
+    'borderBottom': f'2px solid {C_PURPLE}',
+    'fontWeight': '700',
+}
 
-    # Sidebar de Filtros (Offcanvas)
-    dbc.Offcanvas(
-        id="sidebar-filters",
-        title="Filtros da Operação",
-        is_open=False,
-        placement="end",
-        style={'backgroundColor': '#1f2937', 'color': 'white'},
-        children=[
-            html.Div([
-                html.P("Período", className="mb-1"),
-                dcc.DatePickerRange(
-                    id='filter-date',
-                    start_date='2025-01-01',
-                    end_date=datetime.now().strftime('%Y-%m-%d'),
-                    style={'width': '100%'}
-                ),
-                
-                html.P("Tipo de Documento", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-doc', multi=True, placeholder="Selecione...", className="bg-dark text-white border-secondary"),
-                
-                html.P("Status", className="mt-4 mb-1"),
-                dcc.Dropdown(
-                    id='filter-status',
-                    options=['CAPTURE', 'MAILBOX_CAPTURE', 'INTERNAL_USER', 'EXTERNAL_USER'],
-                    placeholder="Selecione...",
-                    className="dark-dropdown"
-                ),
-                
-                html.P("Fluxo", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-fluxo', multi=True, placeholder="Selecione...", className="dark-dropdown"),
+# ── Layout ────────────────────────────────────────────────────────────────────
+app.layout = html.Div(
+    style={
+        'backgroundColor': C_BG,
+        'minHeight': '100vh',
+        'fontFamily': FONT,
+    },
+    children=[
+        dcc.Location(id='url'),
 
-                html.P("CNPJ Tomador", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-tomador', multi=True, placeholder="Selecione...", className="dark-dropdown"),
-
-                html.P("CNPJ Fornecedor", className="mt-4 mb-1"),
-                dcc.Dropdown(id='filter-fornecedor', multi=True, placeholder="Selecione...", className="dark-dropdown"),
-                
-                html.P("Granularidade", className="mt-4 mb-1"),
-                dcc.Dropdown(
-                    id='filter-grain',
-                    options=[
-                        {'label': 'Diário', 'value': 'day'},
-                        {'label': 'Semanal', 'value': 'week'},
-                        {'label': 'Mensal', 'value': 'month'}
+        # ── Header ────────────────────────────────────────────────────────────
+        html.Div(
+            style={
+                'backgroundColor': C_WHITE,
+                'borderBottom': f'1px solid {C_GRAY_LIGHT}',
+                'padding': '0 32px',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'space-between',
+                'height': '60px',
+                'position': 'sticky',
+                'top': '0',
+                'zIndex': '100',
+                'boxShadow': '0 1px 4px rgba(0,0,0,0.06)',
+            },
+            children=[
+                # Logo / title
+                html.Div(
+                    style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'},
+                    children=[
+                        html.Span('√', style={
+                            'color': C_ORANGE, 'fontSize': '28px',
+                            'fontWeight': '900', 'lineHeight': '1',
+                        }),
+                        html.Span('360', style={
+                            'color': C_PURPLE, 'fontSize': '22px',
+                            'fontWeight': '700', 'fontFamily': FONT,
+                        }),
+                        html.Span('BI', style={
+                            'backgroundColor': C_PURPLE,
+                            'color': C_WHITE,
+                            'fontSize': '11px',
+                            'fontWeight': '700',
+                            'padding': '2px 8px',
+                            'borderRadius': '12px',
+                            'marginLeft': '4px',
+                            'fontFamily': FONT,
+                        }),
                     ],
-                    value='month',
-                    clearable=False,
-                    className="dark-dropdown"
                 ),
-                
-                dbc.Button(
-                    "Aplicar Filtros", 
-                    id="btn-apply", 
-                    n_clicks=0, 
-                    className="w-100 mt-5",
-                    style={'backgroundColor': '#8B5CF6', 'border': 'none'}
-                )
-            ])
-        ],
-    ),
+                # Filter button
+                html.Button(
+                    [html.I(className='fas fa-sliders-h'), ' Filtros'],
+                    id='open-filters',
+                    n_clicks=0,
+                    style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'gap': '8px',
+                        'backgroundColor': C_PURPLE,
+                        'color': C_WHITE,
+                        'border': 'none',
+                        'borderRadius': '8px',
+                        'padding': '8px 18px',
+                        'fontSize': '13px',
+                        'fontWeight': '600',
+                        'fontFamily': FONT,
+                        'cursor': 'pointer',
+                    },
+                ),
+            ],
+        ),
 
-    # Navegação por Abas
-    dcc.Tabs(id="tabs", value='tab-resumo', children=[
-        dcc.Tab(label='Resumo', value='tab-resumo', style=tab_style, selected_style=selected_style),
-        dcc.Tab(label='Captura', value='tab-captura', style=tab_style, selected_style=selected_style),
-        dcc.Tab(label='Divergência', value='tab-divergencia', style=tab_style, selected_style=selected_style),
-        dcc.Tab(label='Notas em Aberto', value='tab-notas-aberto', style=tab_style, selected_style=selected_style),
-    ]),
-    
-    html.Div(id='tabs-content', style={'marginTop': '20px'})
-])
+        # ── Tab bar ───────────────────────────────────────────────────────────
+        html.Div(
+            style={
+                'backgroundColor': C_WHITE,
+                'borderBottom': f'1px solid {C_GRAY_LIGHT}',
+                'padding': '0 32px',
+            },
+            children=[
+                dcc.Tabs(
+                    id='tabs',
+                    value='tab-resumo',
+                    style={'border': 'none'},
+                    children=[
+                        dcc.Tab(label='Visão Geral',    value='tab-resumo',
+                                style=TAB_STYLE, selected_style=TAB_SELECTED),
+                        dcc.Tab(label='Ingresso',       value='tab-captura',
+                                style=TAB_STYLE, selected_style=TAB_SELECTED),
+                        dcc.Tab(label='Divergências',   value='tab-divergencia',
+                                style=TAB_STYLE, selected_style=TAB_SELECTED),
+                        dcc.Tab(label='Notas em Aberto',value='tab-notas-aberto',
+                                style=TAB_STYLE, selected_style=TAB_SELECTED),
+                    ],
+                ),
+            ],
+        ),
 
-# --- CALLBACKS ---
+        # ── Main content ──────────────────────────────────────────────────────
+        dcc.Loading(
+            children=html.Div(id='tabs-content', style={'padding': '28px 32px'}),
+            fullscreen=True,
+            overlay_style={
+                'visibility': 'visible',
+                'opacity': 1,
+                'backgroundColor': C_BG,
+            },
+            custom_spinner=html.Div([
+                dbc.Spinner(color=C_PURPLE, size='lg'),
+                html.P('Carregando...', style={
+                    'color': C_PURPLE, 'marginTop': '16px',
+                    'fontSize': '15px', 'fontWeight': '600',
+                    'fontFamily': FONT,
+                }),
+            ], style={
+                'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center',
+            }),
+        ),
+
+        # ── Filter sidebar ────────────────────────────────────────────────────
+        dbc.Offcanvas(
+            id='sidebar-filters',
+            title='Filtros',
+            is_open=False,
+            placement='end',
+            style={
+                'backgroundColor': C_WHITE,
+                'fontFamily': FONT,
+                'width': '340px',
+            },
+            children=[
+                html.Div(
+                    style={'display': 'flex', 'flexDirection': 'column', 'gap': '20px'},
+                    children=[
+                        # Date
+                        html.Div([
+                            html.Label('Período', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.DatePickerRange(
+                                id='filter-date',
+                                start_date='2025-01-01',
+                                end_date=datetime.now().strftime('%Y-%m-%d'),
+                                style={'width': '100%'},
+                            ),
+                        ]),
+                        # Granularity
+                        html.Div([
+                            html.Label('Granularidade', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(
+                                id='filter-grain',
+                                options=[
+                                    {'label': 'Diário',   'value': 'day'},
+                                    {'label': 'Semanal',  'value': 'week'},
+                                    {'label': 'Mensal',   'value': 'month'},
+                                ],
+                                value='month', clearable=False,
+                            ),
+                        ]),
+                        # Doc type
+                        html.Div([
+                            html.Label('Tipo de Documento', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(id='filter-doc', multi=True,
+                                         placeholder='Todos'),
+                        ]),
+                        # Status
+                        html.Div([
+                            html.Label('Status', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(
+                                id='filter-status',
+                                options=['CAPTURE', 'MAILBOX_CAPTURE',
+                                         'INTERNAL_USER', 'EXTERNAL_USER'],
+                                placeholder='Todos',
+                            ),
+                        ]),
+                        # Fluxo
+                        html.Div([
+                            html.Label('Fluxo', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(id='filter-fluxo', multi=True,
+                                         placeholder='Todos'),
+                        ]),
+                        # Tomador
+                        html.Div([
+                            html.Label('CNPJ Tomador', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(id='filter-tomador', multi=True,
+                                         placeholder='Todos'),
+                        ]),
+                        # Fornecedor
+                        html.Div([
+                            html.Label('CNPJ Fornecedor', style={
+                                'fontSize': '12px', 'fontWeight': '600',
+                                'color': C_GRAY, 'textTransform': 'uppercase',
+                                'letterSpacing': '0.05em', 'marginBottom': '6px',
+                                'display': 'block',
+                            }),
+                            dcc.Dropdown(id='filter-fornecedor', multi=True,
+                                         placeholder='Todos'),
+                        ]),
+                        # Apply button
+                        html.Button(
+                            'Aplicar Filtros',
+                            id='btn-apply',
+                            n_clicks=0,
+                            style={
+                                'width': '100%',
+                                'backgroundColor': C_PURPLE,
+                                'color': C_WHITE,
+                                'border': 'none',
+                                'borderRadius': '8px',
+                                'padding': '12px',
+                                'fontSize': '14px',
+                                'fontWeight': '700',
+                                'fontFamily': FONT,
+                                'cursor': 'pointer',
+                                'marginTop': '8px',
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ],
+)
+
+# ── Callbacks ─────────────────────────────────────────────────────────────────
+
+# Clear content immediately on tab/filter click (before server responds)
+app.clientside_callback(
+    'function(tab, n) { return null; }',
+    Output('tabs-content', 'children', allow_duplicate=True),
+    Input('tabs', 'value'),
+    Input('btn-apply', 'n_clicks'),
+    prevent_initial_call=True,
+)
+
 
 @app.callback(
-    Output("sidebar-filters", "is_open"),
-    Input("open-filters", "n_clicks"),
-    State("sidebar-filters", "is_open"),
+    Output('sidebar-filters', 'is_open'),
+    Input('open-filters', 'n_clicks'),
+    State('sidebar-filters', 'is_open'),
 )
 def toggle_offcanvas(n1, is_open):
-    if n1: return not is_open
+    if n1:
+        return not is_open
     return is_open
+
 
 @app.callback(
     Output('tabs-content', 'children'),
@@ -257,107 +460,102 @@ def toggle_offcanvas(n1, is_open):
     State('filter-fluxo', 'value'),
     State('filter-tomador', 'value'),
     State('filter-fornecedor', 'value'),
-    State('filter-grain', 'value')
+    State('filter-grain', 'value'),
 )
-def render_content(tab, n_clicks, search, start, end, doc_types, status, fluxo, tomador, fornecedor, grain):
-    customer_id = get_customer_from_search(search)
-    
-    # Construção dos filtros para API
-    api_filters = []
-    if start: api_filters.append({'field': 'process_created_at', 'value': start, 'operator': 'gte'})
-    if end:   api_filters.append({'field': 'process_created_at', 'value': end, 'operator': 'lte'})
-    
-    def add_in_filter(field, values):
-        if values:
-            formatted = ", ".join([f"'{v}'" for v in values])
-            api_filters.append({'field': field, 'value': formatted, 'operator': 'in'})
-
-    add_in_filter('document_type', doc_types)
-    add_in_filter('process_name', fluxo)
-    add_in_filter('supplier_cnpj', fornecedor)
-    add_in_filter('customer_cnpj', tomador)
-    
-    if status: api_filters.append({'field': 'provider', 'value': status, 'operator': 'eq'})
-    
-    filters_tuple = tuple(tuple(d.items()) for d in api_filters)
+def render_content(tab, n_clicks, search, start, end,
+                   doc_types, status, fluxo, tomador, fornecedor, grain):
+    customer_id   = get_customer_from_search(search)
+    filters       = build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor)
+    filters_tuple = tuple(tuple(d.items()) for d in filters)
+    pd_grain      = {'day': 'D', 'week': 'W', 'month': 'ME'}.get(grain, 'ME')
 
     if tab == 'tab-resumo':
         return layouts.get_resumo_iframe(HTML_HOMEPAGE_CONTENT)
-    
-    if tab == 'tab-captura':
-        dashboard_data = get_cached_captura_data(grain, customer_id, filters_tuple)
-        return layouts.get_captura_layout(
-            selected_grain={'day':'D','week':'W','month':'ME'}.get(grain, 'ME'), 
-            api_data=dashboard_data, 
-            api_grain=grain
-        )
-        
-    if tab == 'tab-divergencia':
-        divergencia_data = get_cached_divergencia_data(grain, customer_id, filters_tuple)
-        return layouts.get_divergencia_layout(
-            selected_grain={'day':'D','week':'W','month':'ME'}.get(grain, 'ME'), 
-            api_data=divergencia_data, 
-            api_grain=grain
-        )
-        
-    if tab == 'tab-notas-aberto':
-        notas_aberto_data = get_cached_notas_aberto_data(grain, customer_id, filters_tuple)
-        return layouts.get_notas_aberto_layout(
-            selected_grain={'day':'D','week':'W','month':'ME'}.get(grain, 'ME'), 
-            api_data=notas_aberto_data, 
-            api_grain=grain
-        )
-        
-    return html.Div("Conteúdo não encontrado", style={'color': 'white'})
 
-# Callbacks Independentes para as Tabelas
+    if tab == 'tab-captura':
+        return layouts.get_captura_layout(
+            pd_grain, get_cached_captura_data(grain, customer_id, filters_tuple), grain,
+        )
+
+    if tab == 'tab-divergencia':
+        return layouts.get_divergencia_layout(
+            pd_grain, get_cached_divergencia_data(grain, customer_id, filters_tuple), grain,
+        )
+
+    if tab == 'tab-notas-aberto':
+        return layouts.get_notas_aberto_layout(
+            pd_grain, get_cached_notas_aberto_data(grain, customer_id, filters_tuple), grain,
+        )
+
+    return html.Div('Conteúdo não encontrado.', style={'color': C_GRAY, 'fontFamily': FONT})
+
+
 @app.callback(
-    [Output('tabela-analitica-captura', 'data'), Output('tabela-analitica-captura', 'columns')],
-    [Input('tabela-analitica-captura', "page_current"), Input('tabela-analitica-captura', "page_size"), Input('btn-apply', 'n_clicks')],
-    [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
-     State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
+    [Output('tabela-analitica-captura', 'data'),
+     Output('tabela-analitica-captura', 'columns')],
+    [Input('tabela-analitica-captura', 'page_current'),
+     Input('tabela-analitica-captura', 'page_size'),
+     Input('btn-apply', 'n_clicks')],
+    [State('tabs', 'value'), State('filter-date', 'start_date'),
+     State('filter-date', 'end_date'), State('filter-doc', 'value'),
+     State('filter-status', 'value'), State('filter-fluxo', 'value'),
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'),
+     State('url', 'search')],
 )
 def update_captura_table(*args):
     return fetch_table_data(*args)
 
+
 @app.callback(
-    [Output('tabela-analitica-divergencias', 'data'), Output('tabela-analitica-divergencias', 'columns')],
-    [Input('tabela-analitica-divergencias', "page_current"), Input('tabela-analitica-divergencias', "page_size"), Input('btn-apply', 'n_clicks')],
-    [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
-     State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
+    [Output('tabela-analitica-divergencias', 'data'),
+     Output('tabela-analitica-divergencias', 'columns')],
+    [Input('tabela-analitica-divergencias', 'page_current'),
+     Input('tabela-analitica-divergencias', 'page_size'),
+     Input('btn-apply', 'n_clicks')],
+    [State('tabs', 'value'), State('filter-date', 'start_date'),
+     State('filter-date', 'end_date'), State('filter-doc', 'value'),
+     State('filter-status', 'value'), State('filter-fluxo', 'value'),
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'),
+     State('url', 'search')],
 )
 def update_divergencia_table(*args):
     return fetch_table_data(*args)
 
+
 @app.callback(
-    [Output('tabela-analitica-notas-aberto', 'data'), Output('tabela-analitica-notas-aberto', 'columns')],
-    [Input('tabela-analitica-notas-aberto', "page_current"), Input('tabela-analitica-notas-aberto', "page_size"), Input('btn-apply', 'n_clicks')],
-    [State('tabs', 'value'), State('filter-date', 'start_date'), State('filter-date', 'end_date'), 
-     State('filter-doc', 'value'), State('filter-status', 'value'), State('filter-fluxo', 'value'), 
-     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'), State('url', 'search')]
+    [Output('tabela-analitica-notas-aberto', 'data'),
+     Output('tabela-analitica-notas-aberto', 'columns')],
+    [Input('tabela-analitica-notas-aberto', 'page_current'),
+     Input('tabela-analitica-notas-aberto', 'page_size'),
+     Input('btn-apply', 'n_clicks')],
+    [State('tabs', 'value'), State('filter-date', 'start_date'),
+     State('filter-date', 'end_date'), State('filter-doc', 'value'),
+     State('filter-status', 'value'), State('filter-fluxo', 'value'),
+     State('filter-tomador', 'value'), State('filter-fornecedor', 'value'),
+     State('url', 'search')],
 )
 def update_notas_aberto_table(*args):
     return fetch_table_data(*args)
 
+
 @app.callback(
-    Output('filter-fluxo', 'options'),
-    Output('filter-fornecedor', 'options'),
-    Output('filter-tomador', 'options'),
-    Output('filter-doc', 'options'),
+    Output('filter-fluxo',     'options'),
+    Output('filter-fornecedor','options'),
+    Output('filter-tomador',   'options'),
+    Output('filter-doc',       'options'),
     Input('tabs', 'value'),
-    Input('url', 'search')
+    Input('url', 'search'),
 )
 def load_dropdown_options(tab, search):
     customer_id = get_customer_from_search(search)
-    options = get_cached_filter_options(customer_id)
+    options     = get_cached_filter_options(customer_id)
     return (
-        options.get('fluxos', []), 
-        options.get('fornecedores', []), 
+        options.get('fluxos', []),
+        options.get('fornecedores', []),
         options.get('tomadores', []),
-        ['Vinvoice::MaterialInvoice', 'Vinvoice::ServiceInvoice'] # Exemplo estático ou vindo da API
+        ['Vinvoice::MaterialInvoice', 'Vinvoice::ServiceInvoice'],
     )
 
+
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0", port=8050)
+    app.run(debug=True, host='0.0.0.0', port=8050)
