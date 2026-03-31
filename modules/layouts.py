@@ -384,10 +384,153 @@ def get_notas_aberto_layout(selected_grain='ME', api_data=None, api_grain='month
     )
 
 
-# ── Resumo (iframe) ───────────────────────────────────────────────────────────
+# ── Visão Geral ───────────────────────────────────────────────────────────────
 
-def get_resumo_iframe(content):
-    return html.Iframe(
-        srcDoc=content,
-        style={'width': '100%', 'height': '2000px', 'border': 'none'},
+def get_resumo_layout(captura_data, divergencia_data, notas_data, selected_grain='ME'):
+    """
+    Compiled overview: top KPIs + one chart from each operational area.
+    The goal is to give a full story of the customer's operation at a glance:
+      1. How many notes came in and how automated the ingestion is
+      2. What portion has divergences that need attention
+      3. How many are still open waiting for resolution
+    """
+    # ── Extract series ────────────────────────────────────────────────────────
+    cap_series  = (captura_data     or {}).get('series', [])
+    div_series  = (divergencia_data or {}).get('series', [])
+    ab_series   = (notas_data       or {}).get('series', [])
+
+    # ── Aggregate KPIs ────────────────────────────────────────────────────────
+    total_cap   = sum(d.get('totalCount',          0) for d in cap_series)
+    total_auto  = sum(d.get('totalAuto',           0) for d in cap_series)
+    total_div   = sum(d.get('totalComDivergencia', 0) for d in div_series)
+    total_notas = sum(d.get('totalCount',          0) for d in div_series) or 1
+    total_ab    = sum(d.get('totalEmAberto',       0) for d in ab_series)
+    total_hum   = sum(d.get('totalEmAbertoHumanas',0) for d in ab_series)
+
+    auto_pct  = (total_auto / total_cap  * 100) if total_cap  > 0 else 0
+    div_pct   = (total_div  / total_notas * 100) if total_notas > 0 else 0
+    hum_pct   = (total_hum  / total_ab   * 100) if total_ab   > 0 else 0
+
+    # ── KPI row ───────────────────────────────────────────────────────────────
+    kpi_cards = _kpi_row([
+        components.kpi_card(
+            'Total Ingressado',
+            f"{total_cap:,}".replace(',', '.'),
+            'fas fa-file-invoice', C_PURPLE,
+        ),
+        components.kpi_card(
+            'Ingresso Automático',
+            f"{auto_pct:.1f}%",
+            'fas fa-bolt', C_ORANGE,
+        ),
+        components.kpi_card(
+            'Com Divergência',
+            f"{div_pct:.1f}%",
+            'fas fa-exclamation-triangle', C_RED,
+        ),
+        components.kpi_card(
+            'Em Aberto',
+            f"{total_ab:,}".replace(',', '.'),
+            'fas fa-clock', C_ORANGE,
+        ),
+        components.kpi_card(
+            'Aguardando Usuário',
+            f"{hum_pct:.1f}%",
+            'fas fa-user-clock', C_RED,
+        ),
+    ])
+
+    # ── Story 1 – Ingresso ────────────────────────────────────────────────────
+    cap_chart_data = aggregate_by_grain(
+        cap_series, sum_cols=['totalCount', 'totalAuto'], grain=selected_grain,
+    )
+    for r in cap_chart_data:
+        r['manualCount'] = r['totalCount'] - r['totalAuto']
+        r['autoPct']     = (r['totalAuto'] / r['totalCount'] * 100) if r['totalCount'] > 0 else 0
+
+    fig_ingresso = charting.create_combined_chart(
+        cap_chart_data,
+        bar_keys=['totalAuto', 'manualCount'],
+        line_key='autoPct',
+        bar_colors=[C_PURPLE, '#c4b5fd'],
+        bar_names=['Automático', 'Manual'],
+    )
+
+    # ── Story 2 – Divergências ────────────────────────────────────────────────
+    div_chart_data = aggregate_by_grain(
+        div_series, sum_cols=['totalCount', 'totalComDivergencia'], grain=selected_grain,
+    )
+    for r in div_chart_data:
+        r['semDivergencia'] = r['totalCount'] - r['totalComDivergencia']
+        r['divPct']         = (r['totalComDivergencia'] / r['totalCount'] * 100) if r['totalCount'] > 0 else 0
+
+    fig_divergencia = charting.create_combined_chart(
+        div_chart_data,
+        bar_keys=['totalComDivergencia', 'semDivergencia'],
+        line_key='divPct',
+        bar_colors=[C_RED, '#fca5a5'],
+        bar_names=['Com Divergência', 'Sem Divergência'],
+    )
+
+    # ── Story 3 – Notas em Aberto ─────────────────────────────────────────────
+    ab_chart_data = aggregate_by_grain(
+        ab_series, sum_cols=['totalEmAberto', 'totalEmAbertoHumanas'], grain=selected_grain,
+    )
+    for r in ab_chart_data:
+        r['totalSistema'] = r['totalEmAberto'] - r['totalEmAbertoHumanas']
+
+    fig_aberto = charting.create_combined_chart(
+        ab_chart_data,
+        bar_keys=['totalEmAbertoHumanas', 'totalSistema'],
+        bar_colors=[C_RED, C_ORANGE],
+        bar_names=['Pendência Humana', 'Pendência Sistema'],
+    )
+    fig_aberto.update_layout(barmode='stack')
+
+    # ── Assemble ──────────────────────────────────────────────────────────────
+    charts_row = _grid(
+        _chart_card('Notas por Tipo de Ingresso',    _graph(fig_ingresso)),
+        _chart_card('Divergências ao Longo do Tempo', _graph(fig_divergencia)),
+        _chart_card('Notas em Aberto por Pendência',  _graph(fig_aberto)),
+        cols=3,
+    )
+
+    # Supplier and divergence type tables side-by-side
+    suppliers  = (captura_data     or {}).get('suppliers', [])
+    tipos_div  = (divergencia_data or {}).get('types',    [])
+    usuarios   = (notas_data       or {}).get('usuarios', [])
+
+    tables_row = _grid(
+        _chart_card(
+            'Top Fornecedores por Volume',
+            _graph(charting.create_table_chart(
+                suppliers, 'Fornecedor', 'supplierCnpj', 'totalCount', 'totalAuto',
+            ), height=260),
+        ),
+        _chart_card(
+            'Principais Divergências',
+            _graph(charting.create_table_chart(
+                tipos_div, 'Tipo', 'nomeDivergencia', 'totalCount', 'totalCount',
+            ), height=260),
+        ),
+        _chart_card(
+            'Usuários com Notas em Aberto',
+            _graph(charting.create_table_chart(
+                usuarios, 'Usuário', 'userName', 'totalCount', 'totalCount',
+            ), height=260),
+        ),
+        cols=3,
+    )
+
+    no_data_banner = None
+    if not cap_series and not div_series and not ab_series:
+        return _no_data()
+
+    return html.Div(
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '24px'},
+        children=[
+            _section('Principais Indicadores', kpi_cards),
+            charts_row,
+            tables_row,
+        ],
     )

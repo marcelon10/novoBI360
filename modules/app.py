@@ -9,7 +9,6 @@ from datetime import datetime
 
 import layouts
 import api_client
-from constants import HTML_HOMEPAGE_CONTENT
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -470,7 +469,12 @@ def render_content(tab, n_clicks, search, start, end,
     pd_grain      = {'day': 'D', 'week': 'W', 'month': 'ME'}.get(grain, 'ME')
 
     if tab == 'tab-resumo':
-        return layouts.get_resumo_iframe(HTML_HOMEPAGE_CONTENT)
+        return layouts.get_resumo_layout(
+            get_cached_captura_data(grain, customer_id, filters_tuple),
+            get_cached_divergencia_data(grain, customer_id, filters_tuple),
+            get_cached_notas_aberto_data(grain, customer_id, filters_tuple),
+            pd_grain,
+        )
 
     if tab == 'tab-captura':
         return layouts.get_captura_layout(
