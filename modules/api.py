@@ -354,8 +354,8 @@ class Query:
                     vvr.id,
                     coalesce(vve.name, 'Sem Nome') as nome_divergencia,
                     coalesce(vvr.associated_to_id, 0) as id_nota,
-                    coalesce(vvr.target_value, 'Sem Valor') as target_value,
-                    coalesce(vvr.field_value, 'Sem Valor') as field_value,
+                    coalesce(vvr.validation_target_value, 'Sem Valor') as target_value,
+                    coalesce(vvr.validation_data_field_value, 'Sem Valor') as field_value,
                     vvr.created_at
                 FROM vpmng_validation_records vvr
                 JOIN vpmng_validation_errors vve ON vve.id = vvr.validation_error_id
@@ -455,7 +455,7 @@ class Query:
                     pi2.id,
                     pi2.created_at,
                     coalesce(tdef.name, 'Sem Tarefa') as last_task_name,
-                    coalesce(users.name, group_users.name, group_partners.name, 'Sem Usuário') as assigned_user
+                    coalesce(users.email, group_users.name, group_partners.name, 'Sem Usuário') as assigned_user
                 FROM vpmng_process_instances pi2
                 LEFT JOIN vpmng_tasks t
                     ON t.id = pi2.recent_task_id
