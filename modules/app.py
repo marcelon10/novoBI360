@@ -88,7 +88,7 @@ def get_customer_from_search(search):
         parsed = urllib.parse.parse_qs(search.lstrip('?'))
         if 'customer' in parsed:
             return parsed['customer'][0]
-    return 'usiminas'
+    return 'dasa'
 
 
 def build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor):

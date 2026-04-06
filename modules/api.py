@@ -7,11 +7,11 @@ import urllib.parse
 from typing import Optional, List
 
 # 1. Your raw credentials
-user = "analytics"
-password = os.getenv('PWD_INTERNAL')
-host = "localhost"
-port = "15432"
-db_name = "analytics"
+user = os.getenv('USER_MULTI_TENANCY')
+password = os.getenv('PWD_MULTI_TENANCY')
+host = os.getenv('HOST_MULTI_TENANCY')
+port = "5432"
+db_name = "dasa_prod_multi_tenancy"
 
 # 2. URL-encode the password (and the user, just in case)
 safe_user = urllib.parse.quote_plus(user)
