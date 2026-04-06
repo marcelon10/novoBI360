@@ -443,7 +443,7 @@ class Query:
         if filters:
             for f in filters:
                 if f.field == 'process_created_at':
-                    f.field = 'created_at'
+                    f.field = 't.created_at'
                 mapped.append(f)
         filter_sql, params = build_filter_sql(mapped)
 
