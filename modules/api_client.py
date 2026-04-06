@@ -30,9 +30,12 @@ def fetch_graphql_data(payload):
     try:
         response = _session.post(API_URL, json=payload, timeout=60)
         if response.status_code != 200:
-            print(f"GraphQL Error: {response.text}")
+            print(f"GraphQL HTTP Error {response.status_code}: {response.text}")
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        if data.get('errors'):
+            print(f"GraphQL Errors: {json.dumps(data['errors'], indent=2)}")
+        return data
     except Exception as e:
         print(f"API Connection Error: {e}")
         return None
@@ -83,7 +86,7 @@ def get_full_captura_data(grain="month", customer=None, source="internal", filte
     }
 
     res = fetch_graphql_data(payload)
-    if res and 'data' in res:
+    if res and res.get('data'):
         return res['data']
     return {"series": [], "suppliers": [], "cities": []}
 
@@ -115,7 +118,7 @@ def get_captura_analitico(limit=10, offset=0, customer=None, source="internal", 
     }
 
     res = fetch_graphql_data(payload)
-    if res and 'data' in res:
+    if res and res.get('data'):
         return res['data'].get('getCapturaAnalitico', [])
     return []
 
@@ -165,7 +168,7 @@ def get_divergencia_analitico(limit=10, offset=0, customer=None, source="interna
     }
 
     res = fetch_graphql_data(payload)
-    if res and 'data' in res:
+    if res and res.get('data'):
         return res['data'].get('getDivergenciaAnalitico', [])
     return []
 
@@ -215,6 +218,6 @@ def get_notas_aberto_analitico(limit=10, offset=0, customer=None, source="intern
     }
 
     res = fetch_graphql_data(payload)
-    if res and 'data' in res:
+    if res and res.get('data'):
         return res['data'].get('getNotasAbertoAnalitico', [])
     return []
