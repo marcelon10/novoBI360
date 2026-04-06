@@ -49,38 +49,38 @@ cache = Cache(app.server, config={
 
 # ── Memoized data fetchers ────────────────────────────────────────────────────
 @cache.memoize()
-def get_cached_captura_data(grain, customer, filters_tuple):
-    return api_client.get_full_captura_data(grain=grain, customer=customer,
+def get_cached_captura_data(grain, customer, source, filters_tuple):
+    return api_client.get_full_captura_data(grain=grain, customer=customer, source=source,
                                              filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
-def get_cached_divergencia_data(grain, customer, filters_tuple):
-    return api_client.get_full_divergencia_data(grain=grain, customer=customer,
+def get_cached_divergencia_data(grain, customer, source, filters_tuple):
+    return api_client.get_full_divergencia_data(grain=grain, customer=customer, source=source,
                                                  filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
-def get_cached_notas_aberto_data(grain, customer, filters_tuple):
-    return api_client.get_full_notas_aberto_data(grain=grain, customer=customer,
+def get_cached_notas_aberto_data(grain, customer, source, filters_tuple):
+    return api_client.get_full_notas_aberto_data(grain=grain, customer=customer, source=source,
                                                   filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
-def get_cached_filter_options(customer):
-    return api_client.get_filter_options(customer)
+def get_cached_filter_options(customer, source):
+    return api_client.get_filter_options(customer, source=source)
 
 @cache.memoize()
-def get_cached_captura_analitico(limit, offset, customer, filters_tuple):
+def get_cached_captura_analitico(limit, offset, customer, source, filters_tuple):
     return api_client.get_captura_analitico(limit=limit, offset=offset, customer=customer,
-                                             filters=[dict(f) for f in filters_tuple])
+                                             source=source, filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
-def get_cached_divergencia_analitico(limit, offset, customer, filters_tuple):
+def get_cached_divergencia_analitico(limit, offset, customer, source, filters_tuple):
     return api_client.get_divergencia_analitico(limit=limit, offset=offset, customer=customer,
-                                                 filters=[dict(f) for f in filters_tuple])
+                                                 source=source, filters=[dict(f) for f in filters_tuple])
 
 @cache.memoize()
-def get_cached_notas_aberto_analitico(limit, offset, customer, filters_tuple):
+def get_cached_notas_aberto_analitico(limit, offset, customer, source, filters_tuple):
     return api_client.get_notas_aberto_analitico(limit=limit, offset=offset, customer=customer,
-                                                  filters=[dict(f) for f in filters_tuple])
+                                                  source=source, filters=[dict(f) for f in filters_tuple])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_customer_from_search(search):
@@ -89,6 +89,14 @@ def get_customer_from_search(search):
         if 'customer' in parsed:
             return parsed['customer'][0]
     return 'dasa'
+
+
+def get_source_from_search(search):
+    if search:
+        parsed = urllib.parse.parse_qs(search.lstrip('?'))
+        if 'source' in parsed:
+            return parsed['source'][0]
+    return 'internal'
 
 
 def build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor):
@@ -118,6 +126,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab,
     off = p * ps
     filters        = build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor)
     customer_id    = get_customer_from_search(search)
+    source         = get_source_from_search(search)
     filters_tuple  = tuple(tuple(d.items()) for d in filters)
 
     if tab == 'tab-divergencia':
@@ -129,7 +138,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab,
             {'name': 'Valor Real',   'id': 'fieldValue'},
             {'name': 'Data',         'id': 'createdAt'},
         ]
-        data = get_cached_divergencia_analitico(ps, off, customer_id, filters_tuple)
+        data = get_cached_divergencia_analitico(ps, off, customer_id, source, filters_tuple)
     elif tab == 'tab-notas-aberto':
         cols = [
             {'name': 'ID',      'id': 'id'},
@@ -137,7 +146,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab,
             {'name': 'Usuário', 'id': 'userName'},
             {'name': 'Data',    'id': 'createdAt'},
         ]
-        data = get_cached_notas_aberto_analitico(ps, off, customer_id, filters_tuple)
+        data = get_cached_notas_aberto_analitico(ps, off, customer_id, source, filters_tuple)
     else:
         cols = [
             {'name': 'ID Nota',         'id': 'id'},
@@ -147,7 +156,7 @@ def fetch_table_data(page_current, page_size, n_clicks, tab,
             {'name': 'Valor Total',     'id': 'totalValue'},
             {'name': 'Tipo',            'id': 'documentType'},
         ]
-        data = get_cached_captura_analitico(ps, off, customer_id, filters_tuple)
+        data = get_cached_captura_analitico(ps, off, customer_id, source, filters_tuple)
 
     return data, cols
 
@@ -464,31 +473,32 @@ def toggle_offcanvas(n1, is_open):
 def render_content(tab, n_clicks, search, start, end,
                    doc_types, status, fluxo, tomador, fornecedor, grain):
     customer_id   = get_customer_from_search(search)
+    source        = get_source_from_search(search)
     filters       = build_filters(start, end, doc_types, status, fluxo, tomador, fornecedor)
     filters_tuple = tuple(tuple(d.items()) for d in filters)
     pd_grain      = {'day': 'D', 'week': 'W', 'month': 'ME'}.get(grain, 'ME')
 
     if tab == 'tab-resumo':
         return layouts.get_resumo_layout(
-            get_cached_captura_data(grain, customer_id, filters_tuple),
-            get_cached_divergencia_data(grain, customer_id, filters_tuple),
-            get_cached_notas_aberto_data(grain, customer_id, filters_tuple),
+            get_cached_captura_data(grain, customer_id, source, filters_tuple),
+            get_cached_divergencia_data(grain, customer_id, source, filters_tuple),
+            get_cached_notas_aberto_data(grain, customer_id, source, filters_tuple),
             pd_grain,
         )
 
     if tab == 'tab-captura':
         return layouts.get_captura_layout(
-            pd_grain, get_cached_captura_data(grain, customer_id, filters_tuple), grain,
+            pd_grain, get_cached_captura_data(grain, customer_id, source, filters_tuple), grain,
         )
 
     if tab == 'tab-divergencia':
         return layouts.get_divergencia_layout(
-            pd_grain, get_cached_divergencia_data(grain, customer_id, filters_tuple), grain,
+            pd_grain, get_cached_divergencia_data(grain, customer_id, source, filters_tuple), grain,
         )
 
     if tab == 'tab-notas-aberto':
         return layouts.get_notas_aberto_layout(
-            pd_grain, get_cached_notas_aberto_data(grain, customer_id, filters_tuple), grain,
+            pd_grain, get_cached_notas_aberto_data(grain, customer_id, source, filters_tuple), grain,
         )
 
     return html.Div('Conteúdo não encontrado.', style={'color': C_GRAY, 'fontFamily': FONT})
@@ -552,7 +562,8 @@ def update_notas_aberto_table(*args):
 )
 def load_dropdown_options(tab, search):
     customer_id = get_customer_from_search(search)
-    options     = get_cached_filter_options(customer_id)
+    source      = get_source_from_search(search)
+    options     = get_cached_filter_options(customer_id, source)
     return (
         options.get('fluxos', []),
         options.get('fornecedores', []),
