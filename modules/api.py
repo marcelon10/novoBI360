@@ -16,7 +16,8 @@ def _make_engine(user_env, pwd_env, host_env, db_name_env, db_name_default):
         return None
     safe_user = urllib.parse.quote_plus(user)
     safe_password = urllib.parse.quote_plus(password)
-    url = f"postgresql://{safe_user}:{safe_password}@{host}:5432/{db_name}"
+    host_part, port_part = host.rsplit(':', 1) if ':' in host else (host, '5432')
+    url = f"postgresql://{safe_user}:{safe_password}@{host_part}:{port_part}/{db_name}"
     return create_engine(
         url,
         pool_size=10,
